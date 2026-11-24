@@ -198,7 +198,83 @@ class ChatRoomIntegrationTest(unittest.TestCase):
             self.assertEqual(received["sender"], "WebUser")
         finally:
             bridge.unsubscribe(sub)
-            bridge.disconnect(send_logout=True)
+            bridge.close()
+
+    def test_tcp_chunked_file_and_image_transfer(self) -> None:
+        """验证大于 48 KB 的多块二进制文件/图片经 TCP 分块传输、重组及 SHA-256 校验，并验证私聊隔离。"""
+        import hashlib
+        from pathlib import Path
+        from chatroom.protocol import FILE_CHUNK_SIZE
+        from chatroom.web_client import WebChatBridge
+
+        assert self.server.bound_udp_port is not None
+        alice = WebChatBridge(udp_port=self.server.bound_udp_port)
+        bob = WebChatBridge(udp_port=self.server.bound_udp_port)
+        charlie = WebChatBridge(udp_port=self.server.bound_udp_port)
+        sub_alice = alice.subscribe()
+        sub_bob = bob.subscribe()
+        sub_charlie = charlie.subscribe()
+
+        try:
+            self.assertTrue(alice.connect("127.0.0.1", self.server.bound_tcp_port, "Alice")["ok"])
+            self.assertTrue(bob.connect("127.0.0.1", self.server.bound_tcp_port, "Bob")["ok"])
+            self.assertTrue(charlie.connect("127.0.0.1", self.server.bound_tcp_port, "Charlie")["ok"])
+
+            # 1. 群聊发送一个 130 KB 的多块文件（应拆为 3 个 48 KB TCP 分块）
+            raw_file = bytes((i * 37) % 256 for i in range(FILE_CHUNK_SIZE * 2 + 12345))
+            expected_hash = hashlib.sha256(raw_file).hexdigest()
+            tx = alice.send_file("lab_report.bin", raw_file, mime_type="application/octet-stream", is_image=False)
+            self.assertTrue(tx["ok"])
+            self.assertEqual(tx["total_chunks"], 3)
+
+            def wait_complete(sub, target_file_id: str) -> Dict[str, Any]:
+                deadline = time.monotonic() + 5.0
+                progress_events = 0
+                while time.monotonic() < deadline:
+                    ev = sub.get(timeout=max(0.1, deadline - time.monotonic()))
+                    if ev.get("type") == "FILE_PROGRESS" and ev.get("file_id") == target_file_id:
+                        progress_events += 1
+                    if ev.get("type") == "FILE_COMPLETE" and ev.get("file_id") == target_file_id:
+                        ev["_progress_count"] = progress_events
+                        return ev
+                raise AssertionError("等待 FILE_COMPLETE 超时")
+
+            bob_done = wait_complete(sub_bob, tx["file_id"])
+            self.assertTrue(bob_done["verified"])
+            self.assertEqual(bob_done["sha256"], expected_hash)
+            self.assertEqual(bob_done["size"], len(raw_file))
+            self.assertEqual(bob_done["_progress_count"], 3)
+
+            saved = bob.get_completed_file(tx["file_id"])
+            self.assertIsNotNone(saved)
+            assert saved is not None
+            self.assertEqual(Path(saved["path"]).read_bytes(), raw_file)
+
+            # 2. 私聊发送一张图片给 Bob，验证 Charlie 不会收到
+            fake_png = b"\x89PNG\r\n\x1a\n" + b"imgdata" * 1000
+            img_tx = alice.send_file("demo.png", fake_png, mime_type="image/png", is_image=True, to="Bob")
+            self.assertTrue(img_tx["ok"])
+
+            bob_img = wait_complete(sub_bob, img_tx["file_id"])
+            self.assertTrue(bob_img["verified"])
+            self.assertTrue(bob_img["is_image"])
+            self.assertEqual(bob_img["to"], "Bob")
+
+            # 发送一条群聊哨兵消息，确认 Charlie 期间没有收到私聊图片
+            self.assertTrue(alice.send_message("sentinel")["ok"])
+            deadline = time.monotonic() + 3.0
+            while time.monotonic() < deadline:
+                ev = sub_charlie.get(timeout=max(0.1, deadline - time.monotonic()))
+                self.assertNotEqual(ev.get("file_id"), img_tx["file_id"])
+                if ev.get("type") == MSG_CHAT and ev.get("text") == "sentinel":
+                    break
+        finally:
+            alice.unsubscribe(sub_alice)
+            bob.unsubscribe(sub_bob)
+            charlie.unsubscribe(sub_charlie)
+            alice.close()
+            bob.close()
+            charlie.close()
 
 
 if __name__ == "__main__":

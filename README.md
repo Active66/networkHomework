@@ -4,6 +4,7 @@
 
 - **传输层双协议结合**：TCP 负责可靠聊天通信，UDP 局域网广播负责自动发现服务端。
 - **自定义应用层协议**：采用 `4 字节大端长度头 (!I) + UTF-8 JSON` 帧格式，解决 TCP 字节流粘包与拆包问题。
+- **TCP 分块文件与图片传输**：将文件/图片按 `48 KB/块` 切分封装为 `FILE_META` → `FILE_CHUNK` → `FILE_END` 协议帧流式传输，接收端按序号重组并进行 **SHA-256 完整性校验**（支持群发、点对点私发、拖拽上传、粘贴图片、大图预览与一键下载）。
 - **服务端并发与状态管理**：多线程并发模型 + 全局在线用户锁 + 单连接发送锁（避免多线程并发写入同一套接字导致字节交错）。
 - **心跳保活与僵尸连接清理**：客户端定时发送 `HEARTBEAT`，服务端监控超时连接并自动广播下线通知。
 
@@ -15,15 +16,15 @@
 networkHomework/
 ├── chatroom/
 │   ├── __init__.py
-│   ├── protocol.py     # 应用层协议编解码（4字节长度前缀 + JSON）
+│   ├── protocol.py     # 应用层协议编解码（4字节长度前缀 + JSON + 分块文件常量）
 │   ├── discovery.py    # UDP 局域网广播发现服务端与客户端探测
-│   ├── server.py       # 多线程 TCP 服务端（登录/群聊/私聊/在线列表/心跳检测）
-│   ├── web_client.py   # PC 端现代简约 IM Web 界面客户端（推荐，零依赖桥接 TCP/UDP）
-│   ├── web/index.html  # 浅蓝渐变左右分栏 IM 前端界面
+│   ├── server.py       # 多线程 TCP 服务端（登录/群聊/私聊/文件分块转发/心跳检测）
+│   ├── web_client.py   # PC 端现代简约 IM Web 客户端（零依赖桥接 TCP/UDP 与文件重组校验）
+│   ├── web/index.html  # 浅蓝渐变左右分栏 IM 前端界面（含文件/图片分块进度与预览）
 │   ├── gui_client.py   # 桌面图形界面客户端（基于 Python 内置 tkinter）
 │   └── client.py       # 命令行交互式客户端
 └── tests/
-    └── test_chat.py    # 端到端集成测试（含 UDP 发现、粘包拆包、私聊隔离、Web 桥接）
+    └── test_chat.py    # 端到端集成测试（含 UDP 发现、粘包拆包、私聊隔离、TCP 分块文件校验）
 ```
 
 ---
@@ -37,7 +38,7 @@ networkHomework/
 +--------------------------+-------------------------------------------+
 ```
 
-支持的消息类型：`LOGIN`、`LOGIN_ACK`、`CHAT`、`PRIVATE`、`USER_LIST`、`SYSTEM`、`HEARTBEAT`、`LOGOUT`、`ERROR`。
+支持的消息类型：`LOGIN`、`LOGIN_ACK`、`CHAT`、`PRIVATE`、`FILE_META`、`FILE_CHUNK`、`FILE_END`、`USER_LIST`、`SYSTEM`、`HEARTBEAT`、`LOGOUT`、`ERROR`。
 
 ---
 
@@ -61,7 +62,7 @@ python3 -m chatroom.server --host 0.0.0.0 --port 8888
 python3 -m chatroom.web_client --web-port 8080
 ```
 
-启动后会自动打开浏览器界面（底层依然走自定义 TCP 协议与 UDP 自动发现）。点击 **「UDP 自动发现」** 或填入服务端 IP/昵称即可接入；左侧会话列表支持群聊大厅与联系人点对点私聊无缝切换。
+启动后会自动打开浏览器界面（底层依然走自定义 TCP 协议与 UDP 自动发现）。点击 **「UDP 自动发现」** 或填入服务端 IP/昵称即可接入；左侧会话列表支持群聊大厅与联系人点对点私聊无缝切换；点击工具栏 **「文件 / 图片」** 图标、拖拽文件或 `Ctrl+V` 粘贴截图即可通过 TCP 48 KB 分块发送并自动进行 SHA-256 校验。
 
 **方式 B：Tkinter 桌面窗口客户端**
 

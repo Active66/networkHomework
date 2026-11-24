@@ -18,6 +18,8 @@ from typing import Any, Dict, Optional
 HEADER_FORMAT = "!I"  # 网络字节序（大端）4字节无符号整数
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 MAX_PACKET_SIZE = 1024 * 1024  # 单包最大 1 MB，防止恶意超大长度头耗尽内存
+FILE_CHUNK_SIZE = 48 * 1024  # 文件 TCP 分块大小（48 KB 原始字节，Base64 编码后约 64 KB）
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 单文件最大 20 MB
 
 # 消息类型常量
 MSG_LOGIN = "LOGIN"
@@ -29,6 +31,9 @@ MSG_SYSTEM = "SYSTEM"
 MSG_HEARTBEAT = "HEARTBEAT"
 MSG_LOGOUT = "LOGOUT"
 MSG_ERROR = "ERROR"
+MSG_FILE_META = "FILE_META"
+MSG_FILE_CHUNK = "FILE_CHUNK"
+MSG_FILE_END = "FILE_END"
 
 
 class ProtocolError(Exception):

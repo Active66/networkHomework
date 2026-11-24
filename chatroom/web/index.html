@@ -45,7 +45,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* 桌面应用居中外框 */
     .desktop-stage {
       width: 100%;
       height: 100%;
@@ -232,7 +231,7 @@
       gap: 4px;
     }
 
-    .session-row-top {
+    .session-row-top, .session-row-bottom {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -252,13 +251,6 @@
       font-size: 11.5px;
       color: var(--text-secondary);
       flex-shrink: 0;
-    }
-
-    .session-row-bottom {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 6px;
     }
 
     .session-preview {
@@ -284,7 +276,6 @@
       flex-shrink: 0;
     }
 
-    /* 左侧底部本机连接状态条 */
     .sidebar-footer {
       display: flex;
       align-items: center;
@@ -354,10 +345,35 @@
 
     /* ========= 右侧聊天主窗口 ========= */
     .chat-panel {
+      position: relative;
       display: flex;
       flex-direction: column;
       min-height: 0;
       background: linear-gradient(135deg, var(--chat-bg-start) 0%, var(--chat-bg-end) 100%);
+    }
+
+    /* 拖拽上传遮罩 */
+    .drop-overlay {
+      position: absolute;
+      inset: 12px;
+      z-index: 25;
+      border-radius: 16px;
+      background: rgba(230, 242, 255, 0.88);
+      backdrop-filter: blur(8px);
+      border: 2px dashed var(--primary);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--primary);
+      font-weight: 500;
+      font-size: 15px;
+      pointer-events: none;
+    }
+
+    .drop-overlay.active {
+      display: flex;
     }
 
     .chat-header {
@@ -434,7 +450,6 @@
       stroke-linejoin: round;
     }
 
-    /* 消息区 */
     .chat-body {
       flex: 1;
       overflow-y: auto;
@@ -519,6 +534,182 @@
       border-top-right-radius: 4px;
     }
 
+    /* ========= 文件 / 图片传输卡片 ========= */
+    .file-card {
+      width: 280px;
+      max-width: 100%;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #FFFFFF;
+      border: 1px solid rgba(31, 35, 41, 0.06);
+      box-shadow: var(--shadow-bubble);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .msg-row.self .file-card {
+      background: #EEF6FF;
+      border-color: rgba(22, 119, 255, 0.14);
+    }
+
+    .file-card-top {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+    }
+
+    .file-ext-badge {
+      width: 42px;
+      height: 46px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #1677FF, #5B9BFF);
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      box-shadow: 0 4px 10px rgba(22, 119, 255, 0.2);
+    }
+
+    .file-meta {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .file-name {
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-size {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(22, 119, 255, 0.12);
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #1677FF, #4CA3FF);
+      transition: width 0.15s ease;
+    }
+
+    .file-card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11.5px;
+      color: var(--text-secondary);
+    }
+
+    .verified-tag {
+      color: #16A34A;
+      font-weight: 500;
+    }
+
+    .failed-tag {
+      color: #DC2626;
+      font-weight: 500;
+    }
+
+    .file-download-link {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 8px;
+      background: rgba(22, 119, 255, 0.1);
+      transition: background 0.15s ease;
+    }
+
+    .file-download-link:hover {
+      background: rgba(22, 119, 255, 0.18);
+    }
+
+    /* 图片消息气泡 */
+    .image-card {
+      padding: 6px;
+      border-radius: 14px;
+      background: #FFFFFF;
+      border: 1px solid rgba(31, 35, 41, 0.06);
+      box-shadow: var(--shadow-bubble);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 280px;
+    }
+
+    .msg-row.self .image-card {
+      background: #E6F2FF;
+    }
+
+    .chat-image-thumb {
+      display: block;
+      max-width: 266px;
+      max-height: 220px;
+      width: auto;
+      height: auto;
+      border-radius: 10px;
+      object-fit: cover;
+      cursor: zoom-in;
+      background: #F4F6FA;
+    }
+
+    .image-card-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 4px 2px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    /* 图片大图预览 Lightbox */
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      cursor: zoom-out;
+    }
+
+    .lightbox.open {
+      display: flex;
+    }
+
+    .lightbox img {
+      max-width: 92vw;
+      max-height: 88vh;
+      border-radius: 14px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+    }
+
     /* ========= 底部纯白输入工具栏 ========= */
     .composer-area {
       position: relative;
@@ -600,7 +791,6 @@
       transform: translateY(1px);
     }
 
-    /* 轻量表情浮层 */
     .emoji-popover {
       position: absolute;
       left: 18px;
@@ -629,14 +819,12 @@
       background: transparent;
       font-size: 18px;
       cursor: pointer;
-      transition: background 0.12s ease;
     }
 
     .emoji-btn:hover {
       background: var(--selected-bg);
     }
 
-    /* 顶部轻提示 Toast */
     .toast {
       position: fixed;
       top: 26px;
@@ -658,7 +846,6 @@
       transform: translateX(-50%) translateY(0);
     }
 
-    /* 连接设置弹窗 */
     .modal-mask {
       position: fixed;
       inset: 0;
@@ -687,35 +874,11 @@
       gap: 14px;
     }
 
-    .modal-title {
-      font-size: 16px;
-      font-weight: 600;
-      color: var(--text-main);
-    }
-
-    .modal-sub {
-      font-size: 12.5px;
-      color: var(--text-secondary);
-      line-height: 1.5;
-    }
-
-    .form-row {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 10px;
-    }
-
-    .form-field {
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-
-    .form-field label {
-      font-size: 12px;
-      color: var(--text-secondary);
-    }
-
+    .modal-title { font-size: 16px; font-weight: 600; color: var(--text-main); }
+    .modal-sub { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
+    .form-row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+    .form-field { display: flex; flex-direction: column; gap: 5px; }
+    .form-field label { font-size: 12px; color: var(--text-secondary); }
     .form-field input {
       height: 38px;
       padding: 0 12px;
@@ -726,26 +889,13 @@
       color: var(--text-main);
       outline: none;
     }
-
     .form-field input:focus {
       background: #FFFFFF;
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
     }
-
-    .modal-msg {
-      min-height: 16px;
-      font-size: 12px;
-      color: var(--primary);
-    }
-
-    .modal-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 2px;
-    }
-
+    .modal-msg { min-height: 16px; font-size: 12px; color: var(--primary); }
+    .modal-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 2px; }
     .btn-subtle {
       border: 1px solid var(--border-light);
       background: #F7F8FA;
@@ -755,12 +905,7 @@
       border-radius: 10px;
       cursor: pointer;
     }
-
-    .btn-subtle:hover {
-      background: var(--selected-bg);
-      color: var(--primary);
-      border-color: transparent;
-    }
+    .btn-subtle:hover { background: var(--selected-bg); color: var(--primary); border-color: transparent; }
 
     @keyframes msgIn {
       from { opacity: 0; transform: translateY(5px); }
@@ -769,11 +914,7 @@
 
     @media (max-width: 760px) {
       .desktop-stage { padding: 0; }
-      .im-window {
-        max-height: none;
-        border-radius: 0;
-        grid-template-columns: 1fr;
-      }
+      .im-window { max-height: none; border-radius: 0; grid-template-columns: 1fr; }
       .sidebar { display: none; }
     }
   </style>
@@ -817,7 +958,11 @@
       </aside>
 
       <!-- 右侧聊天主窗口 -->
-      <section class="chat-panel">
+      <section id="chatPanel" class="chat-panel">
+        <div id="dropOverlay" class="drop-overlay">
+          <span>松开鼠标，立即通过 TCP 分块传输发送文件或图片</span>
+        </div>
+
         <header class="chat-header">
           <div class="chat-title-group">
             <h1 id="chatTitle" class="chat-title">局域网公共大厅</h1>
@@ -859,6 +1004,9 @@
 
         <!-- 底部纯白输入工具栏 -->
         <div class="composer-area">
+          <input id="fileInput" type="file" hidden />
+          <input id="imageInput" type="file" accept="image/*" hidden />
+
           <div id="emojiPopover" class="emoji-popover">
             <button class="emoji-btn" type="button">😊</button>
             <button class="emoji-btn" type="button">😂</button>
@@ -883,7 +1031,7 @@
                 <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"></circle>
               </svg>
             </button>
-            <button class="icon-btn" type="button" data-action="截图" title="截图">
+            <button class="icon-btn" type="button" data-action="截图" title="截图（也可直接 Ctrl+V 粘贴图片）">
               <svg viewBox="0 0 24 24">
                 <circle cx="6" cy="6" r="2.5"></circle>
                 <circle cx="6" cy="18" r="2.5"></circle>
@@ -892,12 +1040,12 @@
                 <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
               </svg>
             </button>
-            <button class="icon-btn" type="button" data-action="发送文件" title="文件">
+            <button id="fileBtn" class="icon-btn" type="button" title="发送文件（TCP 分块传输 + SHA-256 校验）">
               <svg viewBox="0 0 24 24">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
               </svg>
             </button>
-            <button class="icon-btn" type="button" data-action="发送图片" title="图片">
+            <button id="imageBtn" class="icon-btn" type="button" title="发送图片（TCP 分块传输 + 气泡预览）">
               <svg viewBox="0 0 24 24">
                 <rect x="3" y="4" width="18" height="16" rx="2.5" ry="2.5"></rect>
                 <circle cx="8.5" cy="9.5" r="1.5"></circle>
@@ -916,16 +1064,21 @@
           <textarea
             id="msgInput"
             class="composer-textarea"
-            placeholder="输入消息，按 Enter 发送，Shift + Enter 换行..."
+            placeholder="输入消息，Enter 发送，支持拖拽文件或 Ctrl+V 粘贴图片通过 TCP 分块传输..."
           ></textarea>
 
           <div class="composer-footer">
-            <span class="composer-hint">TCP 4B 长度前缀协议 · 局域网实时通信</span>
+            <span class="composer-hint">TCP 48KB 分块文件传输 · SHA-256 完整性校验</span>
             <button id="sendBtn" class="send-btn" type="button">发送</button>
           </div>
         </div>
       </section>
     </div>
+  </div>
+
+  <!-- 图片大图预览 Lightbox -->
+  <div id="lightbox" class="lightbox">
+    <img id="lightboxImg" alt="图片预览" />
   </div>
 
   <div id="toast" class="toast"></div>
@@ -968,6 +1121,7 @@
 
   <script>
     const LOBBY_ID = "__lobby__";
+    const MAX_FILE_BYTES = 20 * 1024 * 1024;
     const AVATAR_GRADIENTS = [
       "linear-gradient(135deg, #4B8BFF, #6C63FF)",
       "linear-gradient(135deg, #38BDF8, #3B82F6)",
@@ -990,12 +1144,20 @@
       return (name || "?").trim().slice(0, 2).toUpperCase();
     }
 
-    function nowHM() {
-      return new Date().toTimeString().slice(0, 5);
-    }
-
     function nowHMS() {
       return new Date().toTimeString().slice(0, 8);
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+
+    function fileExt(filename) {
+      const idx = (filename || "").lastIndexOf(".");
+      if (idx === -1 || idx === filename.length - 1) return "FILE";
+      return filename.slice(idx + 1, idx + 5).toUpperCase();
     }
 
     const state = {
@@ -1007,19 +1169,27 @@
       users: [],
       activeId: LOBBY_ID,
       search: "",
-      // sessions: { [id]: { id, name, isLobby, messages: [], unread: 0, lastText, lastTime } }
       sessions: {},
+      fileIndex: {}, // file_id -> { sessionId, msg }
       eventSource: null,
     };
 
     const els = {
       sessionList: document.getElementById("sessionList"),
       searchInput: document.getElementById("searchInput"),
+      chatPanel: document.getElementById("chatPanel"),
+      dropOverlay: document.getElementById("dropOverlay"),
       chatTitle: document.getElementById("chatTitle"),
       chatSubtitle: document.getElementById("chatSubtitle"),
       chatBody: document.getElementById("chatBody"),
       msgInput: document.getElementById("msgInput"),
       sendBtn: document.getElementById("sendBtn"),
+      fileBtn: document.getElementById("fileBtn"),
+      imageBtn: document.getElementById("imageBtn"),
+      fileInput: document.getElementById("fileInput"),
+      imageInput: document.getElementById("imageInput"),
+      lightbox: document.getElementById("lightbox"),
+      lightboxImg: document.getElementById("lightboxImg"),
       meAvatar: document.getElementById("meAvatar"),
       meName: document.getElementById("meName"),
       netLed: document.getElementById("netLed"),
@@ -1045,7 +1215,7 @@
       els.toast.textContent = msg;
       els.toast.classList.add("show");
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2000);
+      toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2200);
     }
 
     function ensureSession(id, name, isLobby = false) {
@@ -1075,17 +1245,29 @@
       renderHeader();
     }
 
+    function resolveSessionId(pkt) {
+      if (!pkt.to) return LOBBY_ID;
+      return pkt.sender === state.username ? pkt.to : pkt.sender;
+    }
+
     function appendMessage(sessionId, msg) {
       const session =
         sessionId === LOBBY_ID
           ? ensureSession(LOBBY_ID, "局域网公共大厅", true)
           : ensureSession(sessionId, sessionId, false);
       session.messages.push(msg);
+
       if (msg.kind === "system") {
         session.lastText = `[系统] ${msg.text}`;
+      } else if (msg.kind === "file") {
+        const tag = msg.isImage ? "[图片]" : "[文件]";
+        session.lastText = session.isLobby
+          ? `${msg.sender}: ${tag} ${msg.filename}`
+          : `${tag} ${msg.filename}`;
       } else {
         session.lastText = session.isLobby ? `${msg.sender}: ${msg.text}` : msg.text;
       }
+
       session.lastTime = (msg.ts || nowHMS()).slice(0, 5);
       if (state.activeId !== sessionId && msg.kind !== "system") {
         session.unread += 1;
@@ -1167,6 +1349,107 @@
       });
     }
 
+    function buildFileElement(m) {
+      if (m.status === "done" && m.isImage && m.url) {
+        const card = document.createElement("div");
+        card.className = "image-card";
+        card.dataset.fileId = m.fileId;
+
+        const img = document.createElement("img");
+        img.className = "chat-image-thumb";
+        img.src = m.url;
+        img.alt = m.filename;
+        img.addEventListener("click", () => {
+          els.lightboxImg.src = m.url;
+          els.lightbox.classList.add("open");
+        });
+
+        const bar = document.createElement("div");
+        bar.className = "image-card-bar";
+        const statusSpan = document.createElement("span");
+        statusSpan.className = m.verified ? "verified-tag" : "failed-tag";
+        statusSpan.textContent = m.verified
+          ? `SHA-256 已校验 · ${formatSize(m.size)}`
+          : "校验异常";
+
+        const dl = document.createElement("a");
+        dl.className = "file-download-link";
+        dl.href = m.url.startsWith("blob:") ? m.url : `${m.url}?download=1`;
+        dl.download = m.filename;
+        dl.textContent = "保存";
+
+        bar.appendChild(statusSpan);
+        bar.appendChild(dl);
+        card.appendChild(img);
+        card.appendChild(bar);
+        return card;
+      }
+
+      const card = document.createElement("div");
+      card.className = "file-card";
+      card.dataset.fileId = m.fileId;
+
+      const top = document.createElement("div");
+      top.className = "file-card-top";
+      top.innerHTML = `
+        <div class="file-ext-badge">${fileExt(m.filename)}</div>
+        <div class="file-meta">
+          <div class="file-name"></div>
+          <div class="file-size">${formatSize(m.size)} · ${m.totalChunks} 个 TCP 分块</div>
+        </div>
+      `;
+      top.querySelector(".file-name").textContent = m.filename;
+      card.appendChild(top);
+
+      if (m.status !== "done") {
+        const track = document.createElement("div");
+        track.className = "progress-track";
+        const fill = document.createElement("div");
+        fill.className = "progress-fill";
+        fill.style.width = `${m.percent || 0}%`;
+        track.appendChild(fill);
+        card.appendChild(track);
+
+        const footer = document.createElement("div");
+        footer.className = "file-card-footer";
+        footer.innerHTML = `
+          <span class="progress-text">TCP 分块传输 ${m.receivedChunks || 0}/${m.totalChunks}</span>
+          <span class="progress-pct">${m.percent || 0}%</span>
+        `;
+        card.appendChild(footer);
+      } else {
+        const footer = document.createElement("div");
+        footer.className = "file-card-footer";
+        const badge = document.createElement("span");
+        badge.className = m.verified ? "verified-tag" : "failed-tag";
+        badge.textContent = m.verified ? "✓ SHA-256 校验通过" : "✕ 校验未通过";
+        footer.appendChild(badge);
+
+        if (m.url) {
+          const dl = document.createElement("a");
+          dl.className = "file-download-link";
+          dl.href = m.url.startsWith("blob:") ? m.url : `${m.url}?download=1`;
+          dl.download = m.filename;
+          dl.textContent = "下载文件";
+          footer.appendChild(dl);
+        }
+        card.appendChild(footer);
+      }
+
+      return card;
+    }
+
+    function updateFileProgressDOM(fileId, receivedChunks, totalChunks, percent) {
+      const card = els.chatBody.querySelector(`.file-card[data-file-id="${fileId}"]`);
+      if (!card) return;
+      const fill = card.querySelector(".progress-fill");
+      const text = card.querySelector(".progress-text");
+      const pct = card.querySelector(".progress-pct");
+      if (fill) fill.style.width = `${percent}%`;
+      if (text) text.textContent = `TCP 分块传输 ${receivedChunks}/${totalChunks}`;
+      if (pct) pct.textContent = `${percent}%`;
+    }
+
     function renderMessages() {
       const active = state.sessions[state.activeId] || ensureSession(LOBBY_ID, "局域网公共大厅", true);
       els.chatBody.innerHTML = "";
@@ -1209,10 +1492,14 @@
           col.appendChild(senderEl);
         }
 
-        const bubble = document.createElement("div");
-        bubble.className = "msg-bubble";
-        bubble.textContent = m.text;
-        col.appendChild(bubble);
+        if (m.kind === "file") {
+          col.appendChild(buildFileElement(m));
+        } else {
+          const bubble = document.createElement("div");
+          bubble.className = "msg-bubble";
+          bubble.textContent = m.text;
+          col.appendChild(bubble);
+        }
 
         row.appendChild(avatar);
         row.appendChild(col);
@@ -1222,7 +1509,7 @@
       els.chatBody.scrollTop = els.chatBody.scrollHeight;
     }
 
-    /* ========= 发送消息 ========= */
+    /* ========= 发送文本消息 ========= */
     async function sendCurrentMessage() {
       const text = els.msgInput.value.trim();
       if (!text) return;
@@ -1258,6 +1545,149 @@
         showToast(data.error || "发送失败");
       }
     }
+
+    /* ========= 发送文件 / 图片（真实 TCP 分块传输） ========= */
+    async function uploadFileOrImage(file, forceImage = null) {
+      if (!file) return;
+      if (file.size > MAX_FILE_BYTES) {
+        showToast("单个文件不能超过 20 MB");
+        return;
+      }
+
+      const isImage = forceImage !== null ? forceImage : file.type.startsWith("image/");
+      const to = state.activeId === LOBBY_ID ? null : state.activeId;
+
+      if (!state.liveMode) {
+        // 离线预览模式：按 48 KB 模拟分块进度 + 本地 Blob 预览
+        const totalChunks = Math.max(1, Math.ceil(file.size / (48 * 1024)));
+        const fileId = `demo_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`;
+        const blobUrl = URL.createObjectURL(file);
+        const msg = {
+          kind: "file",
+          fileId,
+          filename: file.name,
+          size: file.size,
+          isImage,
+          totalChunks,
+          receivedChunks: 0,
+          percent: 0,
+          status: "transferring",
+          verified: false,
+          url: null,
+          sender: state.username,
+          to,
+          ts: nowHMS(),
+        };
+        state.fileIndex[fileId] = { sessionId: state.activeId, msg };
+        appendMessage(state.activeId, msg);
+
+        let seq = 0;
+        const step = Math.max(1, Math.ceil(totalChunks / 8));
+        const timer = setInterval(() => {
+          seq = Math.min(totalChunks, seq + step);
+          msg.receivedChunks = seq;
+          msg.percent = Math.min(100, Math.round((seq / totalChunks) * 100));
+          updateFileProgressDOM(fileId, seq, totalChunks, msg.percent);
+          if (seq >= totalChunks) {
+            clearInterval(timer);
+            msg.status = "done";
+            msg.verified = true;
+            msg.url = blobUrl;
+            if (state.activeId === state.fileIndex[fileId].sessionId) {
+              renderMessages();
+            }
+            showToast(`${isImage ? "图片" : "文件"}分块传输演示完成`);
+          }
+        }, 90);
+        return;
+      }
+
+      if (!state.connected) {
+        openModal();
+        return;
+      }
+
+      try {
+        const headers = {
+          "Content-Type": "application/octet-stream",
+          "X-Filename": encodeURIComponent(file.name),
+          "X-Mime-Type": file.type || "application/octet-stream",
+          "X-Is-Image": isImage ? "true" : "false",
+        };
+        if (to) {
+          headers["X-To"] = encodeURIComponent(to);
+        }
+
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers,
+          body: file,
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showToast(data.error || "文件上传失败");
+        } else {
+          showToast(`开始 TCP 分块发送 ${file.name}（共 ${data.total_chunks} 块）`);
+        }
+      } catch (err) {
+        showToast(`发送异常: ${err.message}`);
+      }
+    }
+
+    els.fileBtn.addEventListener("click", () => els.fileInput.click());
+    els.imageBtn.addEventListener("click", () => els.imageInput.click());
+
+    els.fileInput.addEventListener("change", () => {
+      const file = els.fileInput.files && els.fileInput.files[0];
+      els.fileInput.value = "";
+      if (file) uploadFileOrImage(file, null);
+    });
+
+    els.imageInput.addEventListener("change", () => {
+      const file = els.imageInput.files && els.imageInput.files[0];
+      els.imageInput.value = "";
+      if (file) uploadFileOrImage(file, true);
+    });
+
+    // 支持 Ctrl+V 直接粘贴截图/图片
+    els.msgInput.addEventListener("paste", (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.kind === "file") {
+          const f = item.getAsFile();
+          if (f) {
+            e.preventDefault();
+            uploadFileOrImage(f, f.type.startsWith("image/"));
+            return;
+          }
+        }
+      }
+    });
+
+    // 支持拖拽文件到聊天区域发送
+    let dragCounter = 0;
+    els.chatPanel.addEventListener("dragenter", (e) => {
+      e.preventDefault();
+      dragCounter += 1;
+      els.dropOverlay.classList.add("active");
+    });
+    els.chatPanel.addEventListener("dragover", (e) => e.preventDefault());
+    els.chatPanel.addEventListener("dragleave", () => {
+      dragCounter = Math.max(0, dragCounter - 1);
+      if (dragCounter === 0) els.dropOverlay.classList.remove("active");
+    });
+    els.chatPanel.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      els.dropOverlay.classList.remove("active");
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) uploadFileOrImage(file, null);
+    });
+
+    els.lightbox.addEventListener("click", () => {
+      els.lightbox.classList.remove("open");
+    });
 
     els.sendBtn.addEventListener("click", sendCurrentMessage);
     els.msgInput.addEventListener("keydown", (e) => {
@@ -1295,11 +1725,11 @@
     document.querySelectorAll("[data-action]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const action = btn.getAttribute("data-action");
-        showToast(`「${action}」可在后续扩展为独立 TCP/UDP 媒体通道`);
+        showToast(`「${action}」预留扩展入口（当前已支持文字、图片、文件 TCP 传输）`);
       });
     });
 
-    /* ========= 连接弹窗与真实 TCP/UDP 桥接 ========= */
+    /* ========= 连接弹窗与 SSE 实时事件处理 ========= */
     function openModal() {
       els.modalMsg.textContent = "";
       els.connModal.classList.add("open");
@@ -1315,7 +1745,7 @@
       if (pkt.type === "CHAT") {
         appendMessage(LOBBY_ID, { kind: "chat", sender: pkt.sender, text: pkt.text, ts });
       } else if (pkt.type === "PRIVATE") {
-        const peer = pkt.sender === state.username ? pkt.to : pkt.sender;
+        const peer = resolveSessionId(pkt);
         appendMessage(peer, {
           kind: "private",
           sender: pkt.sender,
@@ -1323,6 +1753,71 @@
           text: pkt.text,
           ts,
         });
+      } else if (pkt.type === "FILE_START") {
+        const sessionId = resolveSessionId(pkt);
+        const msg = {
+          kind: "file",
+          fileId: pkt.file_id,
+          filename: pkt.filename,
+          size: pkt.size,
+          isImage: Boolean(pkt.is_image),
+          totalChunks: pkt.total_chunks || 1,
+          receivedChunks: 0,
+          percent: 0,
+          status: "transferring",
+          verified: false,
+          url: null,
+          sender: pkt.sender,
+          to: pkt.to,
+          ts,
+        };
+        state.fileIndex[pkt.file_id] = { sessionId, msg };
+        appendMessage(sessionId, msg);
+      } else if (pkt.type === "FILE_PROGRESS") {
+        const entry = state.fileIndex[pkt.file_id];
+        if (!entry) return;
+        entry.msg.receivedChunks = pkt.received_chunks;
+        entry.msg.percent = pkt.percent;
+        if (state.activeId === entry.sessionId) {
+          updateFileProgressDOM(
+            pkt.file_id,
+            pkt.received_chunks,
+            pkt.total_chunks,
+            pkt.percent
+          );
+        }
+      } else if (pkt.type === "FILE_COMPLETE") {
+        const entry = state.fileIndex[pkt.file_id];
+        if (entry) {
+          entry.msg.status = "done";
+          entry.msg.percent = 100;
+          entry.msg.receivedChunks = entry.msg.totalChunks;
+          entry.msg.verified = Boolean(pkt.verified);
+          entry.msg.url = pkt.url;
+          if (state.activeId === entry.sessionId) {
+            renderMessages();
+          }
+        } else {
+          const sessionId = resolveSessionId(pkt);
+          const msg = {
+            kind: "file",
+            fileId: pkt.file_id,
+            filename: pkt.filename,
+            size: pkt.size,
+            isImage: Boolean(pkt.is_image),
+            totalChunks: pkt.total_chunks || 1,
+            receivedChunks: pkt.total_chunks || 1,
+            percent: 100,
+            status: "done",
+            verified: Boolean(pkt.verified),
+            url: pkt.url,
+            sender: pkt.sender,
+            to: pkt.to,
+            ts,
+          };
+          state.fileIndex[pkt.file_id] = { sessionId, msg };
+          appendMessage(sessionId, msg);
+        }
       } else if (pkt.type === "SYSTEM") {
         appendMessage(LOBBY_ID, { kind: "system", text: pkt.text, ts });
       } else if (pkt.type === "ERROR") {
@@ -1423,6 +1918,7 @@
       if (state.liveMode) {
         try {
           const res = await fetch("/api/status");
+          if (!res.ok) throw new Error("no live bridge");
           const data = await res.json();
           if (data.connected) {
             state.connected = true;
@@ -1456,18 +1952,27 @@
       syncUserSessions(["林澈", "陈默", "苏晚", "计网实验机-04"]);
 
       appendMessage(LOBBY_ID, { kind: "system", text: "已通过 UDP 广播自动发现局域网服务端 192.168.1.100:8888", ts: "20:12:03" });
-      appendMessage(LOBBY_ID, { kind: "chat", sender: "陈默", text: "大家好，我在 Wireshark 里已经抓到 8888 端口的三次握手和 4 字节长度头了。", ts: "20:12:18" });
-      appendMessage(LOBBY_ID, { kind: "chat", sender: "林澈", text: "太好了！刚刚连续发送三条粘包测试消息，服务端拆包和广播顺序完全正确。", ts: "20:12:41" });
-      appendMessage(LOBBY_ID, { kind: "chat", sender: "苏晚", text: "界面很清爽，点击左侧联系人还能直接切到一对一私聊会话。", ts: "20:14:09" });
+      appendMessage(LOBBY_ID, { kind: "chat", sender: "陈默", text: "大家好，Wireshark 里已经抓到 8888 端口的三次握手和 48 KB 文件分块帧了。", ts: "20:12:18" });
+      appendMessage(LOBBY_ID, {
+        kind: "file",
+        fileId: "demo_report_pdf",
+        filename: "计算机网络实验报告-局域网聊天室.pdf",
+        size: 1384200,
+        isImage: false,
+        totalChunks: 29,
+        receivedChunks: 29,
+        percent: 100,
+        status: "done",
+        verified: true,
+        url: null,
+        sender: "苏晚",
+        ts: "20:13:05",
+      });
+      appendMessage(LOBBY_ID, { kind: "chat", sender: "林澈", text: "收到，点底部「文件」或「图片」图标（或直接拖拽/粘贴）就能体验 TCP 分块传输！", ts: "20:14:09" });
 
-      appendMessage("陈默", { kind: "private", sender: "陈默", to: "林澈", text: "等会儿答辩演示的时候，我这边开两台电脑一起连同一个热点测试。", ts: "20:13:20" });
-      appendMessage("陈默", { kind: "private", sender: "林澈", to: "陈默", text: "没问题，记得先放行 TCP 8888 和 UDP 9999 防火墙端口。", ts: "20:13:45" });
-      appendMessage("苏晚", { kind: "private", sender: "苏晚", to: "林澈", text: "实验报告里的协议帧结构图我整理好了，一会儿发群里。", ts: "20:11:12" });
-
-      // 清除演示初始化产生的未读数，仅保留 1 条自然提示
+      appendMessage("陈默", { kind: "private", sender: "陈默", to: "林澈", text: "等会儿答辩演示时我们测试一下私聊发图和大文件校验。", ts: "20:13:20" });
       state.sessions[LOBBY_ID].unread = 0;
-      state.sessions["陈默"].unread = 0;
-      state.sessions["苏晚"].unread = 1;
+      state.sessions["陈默"].unread = 1;
       renderSidebar();
       renderHeader();
       renderMessages();

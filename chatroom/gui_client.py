@@ -17,6 +17,7 @@ from chatroom.discovery import DISCOVERY_PORT, discover_server
 from chatroom.protocol import (
     MSG_CHAT,
     MSG_ERROR,
+    MSG_FILE_META,
     MSG_HEARTBEAT,
     MSG_LOGIN,
     MSG_LOGIN_ACK,
@@ -359,6 +360,13 @@ class ChatRoomGUI:
             self._append_chat(f"[{ts}] [系统] {pkt.get('text', '')}\n", "system")
         elif msg_type == MSG_USER_LIST:
             self._update_user_list(list(pkt.get("users", [])))
+        elif msg_type == MSG_FILE_META:
+            kind = "图片" if pkt.get("is_image") else "文件"
+            size_kb = pkt.get("size", 0) / 1024
+            self._append_chat(
+                f"[{ts}] [{kind}] {pkt.get('sender')} 发送了 {pkt.get('filename')} ({size_kb:.1f} KB)\n",
+                "system",
+            )
         elif msg_type == MSG_ERROR:
             self._append_chat(f"[提示] {pkt.get('text', '')}\n", "error")
 

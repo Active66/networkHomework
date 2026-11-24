@@ -16,8 +16,12 @@ from typing import Dict, List, Optional, Tuple
 
 from chatroom.discovery import DISCOVERY_PORT, DiscoveryResponder
 from chatroom.protocol import (
+    MAX_FILE_SIZE,
     MSG_CHAT,
     MSG_ERROR,
+    MSG_FILE_CHUNK,
+    MSG_FILE_END,
+    MSG_FILE_META,
     MSG_HEARTBEAT,
     MSG_LOGIN,
     MSG_LOGIN_ACK,
@@ -236,6 +240,30 @@ class ChatServer:
         for session in targets:
             session.send(msg_type, **payload)
 
+    def _route_file_packet(
+        self,
+        sender_session: ClientSession,
+        msg_type: str,
+        target_name: Optional[str],
+        **payload: object,
+    ) -> bool:
+        """将文件元信息/分块/结束帧转发给群聊全体或指定私聊双方。"""
+        if target_name:
+            with self._clients_lock:
+                target = self._clients.get(target_name)
+            if target is None:
+                sender_session.send(MSG_ERROR, text=f"用户 {target_name} 不在线，文件发送中止")
+                return False
+            target.send(msg_type, sender=sender_session.username, to=target_name, **payload)
+            if target_name != sender_session.username:
+                sender_session.send(
+                    msg_type, sender=sender_session.username, to=target_name, **payload
+                )
+            return True
+
+        self._broadcast(msg_type, sender=sender_session.username, to=None, **payload)
+        return True
+
     def _handle_client(self, conn: socket.socket, addr: Tuple[str, int]) -> None:
         session: Optional[ClientSession] = None
         try:
@@ -326,6 +354,70 @@ class ChatServer:
                             text=text,
                             ts=ts,
                         )
+                elif msg_type == MSG_FILE_META:
+                    file_id = str(pkt.get("file_id", "")).strip()
+                    filename = str(pkt.get("filename", "")).strip()
+                    size = int(pkt.get("size", -1))
+                    total_chunks = int(pkt.get("total_chunks", 0))
+                    target_raw = pkt.get("to")
+                    target_name = str(target_raw).strip() if target_raw else None
+                    if not file_id or not filename or size < 0 or size > MAX_FILE_SIZE or total_chunks < 1:
+                        session.send(MSG_ERROR, text="文件元信息非法或超出 20 MB 大小限制")
+                        continue
+                    logger.info(
+                        "[文件传输开始] %s -> %s: %s (%d bytes, %d chunks)",
+                        username,
+                        target_name or "群聊",
+                        filename,
+                        size,
+                        total_chunks,
+                    )
+                    self._route_file_packet(
+                        session,
+                        MSG_FILE_META,
+                        target_name,
+                        file_id=file_id,
+                        filename=filename,
+                        size=size,
+                        mime_type=str(pkt.get("mime_type", "application/octet-stream")),
+                        is_image=bool(pkt.get("is_image", False)),
+                        sha256=str(pkt.get("sha256", "")),
+                        total_chunks=total_chunks,
+                        ts=current_timestamp(),
+                    )
+                elif msg_type == MSG_FILE_CHUNK:
+                    file_id = str(pkt.get("file_id", "")).strip()
+                    data = pkt.get("data")
+                    seq = int(pkt.get("seq", -1))
+                    total_chunks = int(pkt.get("total_chunks", 0))
+                    target_raw = pkt.get("to")
+                    target_name = str(target_raw).strip() if target_raw else None
+                    if not file_id or not isinstance(data, str) or seq < 0 or total_chunks < 1:
+                        continue
+                    self._route_file_packet(
+                        session,
+                        MSG_FILE_CHUNK,
+                        target_name,
+                        file_id=file_id,
+                        seq=seq,
+                        total_chunks=total_chunks,
+                        data=data,
+                    )
+                elif msg_type == MSG_FILE_END:
+                    file_id = str(pkt.get("file_id", "")).strip()
+                    target_raw = pkt.get("to")
+                    target_name = str(target_raw).strip() if target_raw else None
+                    if not file_id:
+                        continue
+                    logger.info("[文件传输完成] %s (file_id=%s)", username, file_id[:8])
+                    self._route_file_packet(
+                        session,
+                        MSG_FILE_END,
+                        target_name,
+                        file_id=file_id,
+                        sha256=str(pkt.get("sha256", "")),
+                        ts=current_timestamp(),
+                    )
                 elif msg_type == MSG_USER_LIST:
                     session.send(MSG_USER_LIST, users=self._get_usernames())
                 elif msg_type == MSG_HEARTBEAT:

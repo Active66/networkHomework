@@ -173,6 +173,33 @@ class ChatRoomIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(user_list_pkt["users"], ["Alice"])
 
+    def test_web_bridge_connect_and_chat(self) -> None:
+        from chatroom.web_client import WebChatBridge
+
+        assert self.server.bound_udp_port is not None
+        bridge = WebChatBridge(udp_port=self.server.bound_udp_port)
+        sub = bridge.subscribe()
+        try:
+            res = bridge.connect("127.0.0.1", self.server.bound_tcp_port, "WebUser")
+            self.assertTrue(res["ok"])
+            self.assertEqual(res["username"], "WebUser")
+
+            send_res = bridge.send_message("hello from glass ui")
+            self.assertTrue(send_res["ok"])
+
+            received = None
+            for _ in range(5):
+                pkt = sub.get(timeout=2.0)
+                if pkt.get("type") == MSG_CHAT and pkt.get("text") == "hello from glass ui":
+                    received = pkt
+                    break
+            self.assertIsNotNone(received)
+            assert received is not None
+            self.assertEqual(received["sender"], "WebUser")
+        finally:
+            bridge.unsubscribe(sub)
+            bridge.disconnect(send_logout=True)
+
 
 if __name__ == "__main__":
     unittest.main()

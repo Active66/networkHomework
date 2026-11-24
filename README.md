@@ -18,8 +18,8 @@ networkHomework/
 │   ├── protocol.py     # 应用层协议编解码（4字节长度前缀 + JSON）
 │   ├── discovery.py    # UDP 局域网广播发现服务端与客户端探测
 │   ├── server.py       # 多线程 TCP 服务端（登录/群聊/私聊/在线列表/心跳检测）
-│   ├── web_client.py   # 极简玻璃拟态星空 Web 界面客户端（推荐，零依赖桥接 TCP/UDP）
-│   ├── web/index.html  # 玻璃拟态星空前端界面
+│   ├── web_client.py   # PC 端现代简约 IM Web 界面客户端（推荐，零依赖桥接 TCP/UDP）
+│   ├── web/index.html  # 浅蓝渐变左右分栏 IM 前端界面
 │   ├── gui_client.py   # 桌面图形界面客户端（基于 Python 内置 tkinter）
 │   └── client.py       # 命令行交互式客户端
 └── tests/
@@ -55,13 +55,13 @@ python3 -m chatroom.server --host 0.0.0.0 --port 8888
 
 ### 2. 启动客户端（三种界面任选）
 
-**方式 A：极简玻璃拟态星空 Web 界面（最推荐）**
+**方式 A：PC 端现代简约 IM Web 界面（最推荐）**
 
 ```bash
 python3 -m chatroom.web_client --web-port 8080
 ```
 
-启动后会自动打开浏览器界面（底层依然走自定义 TCP 协议与 UDP 自动发现）。点击 **「UDP 自动发现」** 或填入服务端 IP/昵称即可接入，点击左侧在线节点可直接发起 `@私聊`。
+启动后会自动打开浏览器界面（底层依然走自定义 TCP 协议与 UDP 自动发现）。点击 **「UDP 自动发现」** 或填入服务端 IP/昵称即可接入；左侧会话列表支持群聊大厅与联系人点对点私聊无缝切换。
 
 **方式 B：Tkinter 桌面窗口客户端**
 

@@ -3,32 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StarLAN · 局域网节点聊天室</title>
+  <title>局域网聊天室 · IM 客户端</title>
   <style>
     :root {
-      --bg-deep: #060917;
-      --bg-mid: #0e1430;
-      --bg-glow-1: rgba(58, 92, 204, 0.34);
-      --bg-glow-2: rgba(110, 72, 198, 0.24);
-      --glass-1: rgba(255, 255, 255, 0.045);
-      --glass-2: rgba(255, 255, 255, 0.07);
-      --glass-3: rgba(255, 255, 255, 0.1);
-      --border-soft: rgba(255, 255, 255, 0.11);
-      --border-bright: rgba(255, 255, 255, 0.2);
-      --text-primary: #eef2ff;
-      --text-secondary: #cbd5f0;
-      --text-muted: rgba(203, 213, 240, 0.56);
-      --accent-glow: rgba(142, 174, 255, 0.28);
-      --accent-line: rgba(168, 196, 255, 0.48);
-      --private-bg: rgba(154, 128, 255, 0.12);
-      --private-border: rgba(186, 166, 255, 0.28);
-      --self-bg: rgba(124, 162, 255, 0.12);
-      --self-border: rgba(164, 194, 255, 0.26);
-      --online-dot: #7ef7c9;
-      --offline-dot: #f59e9e;
-      --radius-lg: 20px;
-      --radius-md: 14px;
-      --radius-sm: 10px;
+      --chat-bg-start: #EAF2FF;
+      --chat-bg-end: #F8F0FF;
+      --sidebar-bg: #FFFFFF;
+      --selected-bg: #E6F2FF;
+      --hover-bg: #F4F6FA;
+      --primary: #1677FF;
+      --primary-hover: #0E66E4;
+      --primary-active: #0B57C6;
+      --text-main: #1F2329;
+      --text-secondary: #8F959E;
+      --text-tertiary: #B0B6BF;
+      --bubble-peer: #FFFFFF;
+      --bubble-self: #D6E8FF;
+      --border-light: rgba(31, 35, 41, 0.07);
+      --border-subtle: rgba(31, 35, 41, 0.05);
+      --input-gray: #F2F3F5;
+      --shadow-window: 0 20px 60px rgba(31, 56, 110, 0.12), 0 4px 16px rgba(31, 56, 110, 0.06);
+      --shadow-bubble: 0 2px 10px rgba(31, 56, 110, 0.05);
+      --online-green: #22C55E;
+      --offline-red: #EF4444;
     }
 
     * {
@@ -41,987 +38,1285 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
-        "Microsoft YaHei UI", "Segoe UI", Roboto, sans-serif;
-      color: var(--text-primary);
-      background:
-        radial-gradient(ellipse 75% 65% at 18% 12%, var(--bg-glow-1), transparent 65%),
-        radial-gradient(ellipse 65% 60% at 84% 82%, var(--bg-glow-2), transparent 65%),
-        radial-gradient(circle at 50% 45%, var(--bg-mid) 0%, var(--bg-deep) 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei UI",
+        "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      color: var(--text-main);
+      background: linear-gradient(135deg, #DCEBFF 0%, #EFE8FF 52%, #E3EEFF 100%);
       -webkit-font-smoothing: antialiased;
     }
 
-    /* 背景星空粒子画布 */
-    #starfield {
-      position: fixed;
-      inset: 0;
+    /* 桌面应用居中外框 */
+    .desktop-stage {
       width: 100%;
       height: 100%;
-      pointer-events: none;
-      z-index: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
     }
 
-    /* 主布局容器 */
-    .app-shell {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
+    .im-window {
       width: 100%;
+      max-width: 1180px;
       height: 100%;
-      max-width: 1360px;
-      margin: 0 auto;
-      padding: 18px 22px 20px;
-    }
-
-    /* 通用玻璃卡片层级 */
-    .glass-layer-1 {
-      background: var(--glass-1);
-      backdrop-filter: blur(14px) saturate(130%);
-      -webkit-backdrop-filter: blur(14px) saturate(130%);
-      border: 1px solid var(--border-soft);
-      box-shadow:
-        0 14px 40px rgba(3, 6, 20, 0.42),
-        inset 0 1px 0 rgba(255, 255, 255, 0.12);
-    }
-
-    .glass-layer-2 {
-      background: var(--glass-2);
-      backdrop-filter: blur(20px) saturate(140%);
-      -webkit-backdrop-filter: blur(20px) saturate(140%);
-      border: 1px solid var(--border-bright);
-      box-shadow:
-        0 16px 44px rgba(3, 6, 22, 0.48),
-        inset 0 1px 0 rgba(255, 255, 255, 0.18);
-    }
-
-    /* 顶部状态栏 */
-    .topbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      border-radius: var(--radius-lg);
-      min-height: 58px;
-      flex-shrink: 0;
-    }
-
-    .brand-group {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand-orb {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--online-dot);
-      box-shadow: 0 0 12px rgba(126, 247, 201, 0.85);
-      transition: background 0.3s ease, box-shadow 0.3s ease;
-    }
-
-    .brand-orb.offline {
-      background: var(--offline-dot);
-      box-shadow: 0 0 10px rgba(245, 158, 158, 0.65);
-    }
-
-    .lan-title {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: 0.4px;
-      color: var(--text-primary);
-    }
-
-    .lan-sub {
-      font-size: 12px;
-      color: var(--text-muted);
-      margin-left: 4px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-
-    .topbar-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .pill-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 12px;
-      color: var(--text-secondary);
-      background: rgba(255, 255, 255, 0.055);
-      border: 1px solid rgba(255, 255, 255, 0.13);
-    }
-
-    .pill-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #9ec5ff;
-      box-shadow: 0 0 8px rgba(158, 197, 255, 0.9);
-    }
-
-    .ghost-btn {
-      appearance: none;
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text-primary);
-      font-size: 12px;
-      padding: 6px 13px;
-      border-radius: 999px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .ghost-btn:hover {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: rgba(255, 255, 255, 0.28);
-      box-shadow: 0 0 16px rgba(142, 174, 255, 0.22);
-    }
-
-    .ghost-btn:active {
-      transform: translateY(1px);
-    }
-
-    /* 主体双栏悬浮卡片 */
-    .workspace {
+      max-height: 780px;
       display: grid;
-      grid-template-columns: 260px 1fr;
-      gap: 14px;
-      flex: 1;
-      min-height: 0;
+      grid-template-columns: 296px 1fr;
+      border-radius: 18px;
+      overflow: hidden;
+      background: var(--sidebar-bg);
+      box-shadow: var(--shadow-window);
+      border: 1px solid rgba(255, 255, 255, 0.85);
     }
 
-    /* 左侧悬浮频道与节点栏 */
+    /* ========= 左侧纯白会话栏 ========= */
     .sidebar {
       display: flex;
       flex-direction: column;
-      border-radius: var(--radius-lg);
-      padding: 16px 12px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--border-light);
       min-height: 0;
-      overflow: hidden;
     }
 
-    .section-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: var(--text-muted);
-      padding: 4px 10px 10px;
-    }
-
-    .channel-list, .node-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-
-    .channel-list {
-      margin-bottom: 18px;
-    }
-
-    .node-list {
-      flex: 1;
-      overflow-y: auto;
-      padding-right: 2px;
-    }
-
-    .nav-item {
+    .sidebar-top {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 9px 12px;
-      border-radius: var(--radius-md);
-      font-size: 13.5px;
-      color: var(--text-secondary);
-      cursor: pointer;
+      gap: 10px;
+      padding: 16px 14px 12px;
+      flex-shrink: 0;
+    }
+
+    .search-box {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 18px;
+      background: var(--input-gray);
       border: 1px solid transparent;
-      transition: all 0.22s ease;
+      transition: background 0.18s ease, border-color 0.18s ease;
+    }
+
+    .search-box:focus-within {
+      background: #FFFFFF;
+      border-color: rgba(22, 119, 255, 0.35);
+      box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.08);
+    }
+
+    .search-box svg {
+      width: 15px;
+      height: 15px;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+    }
+
+    .search-input {
+      width: 100%;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 13px;
+      color: var(--text-main);
+    }
+
+    .search-input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    .new-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: var(--input-gray);
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.18s ease, color 0.18s ease, transform 0.12s ease;
+    }
+
+    .new-btn:hover {
+      background: var(--selected-bg);
+      color: var(--primary);
+    }
+
+    .new-btn:active {
+      transform: scale(0.95);
+    }
+
+    .session-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .session-list::-webkit-scrollbar,
+    .chat-body::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .session-list::-webkit-scrollbar-thumb,
+    .chat-body::-webkit-scrollbar-thumb {
+      background: rgba(143, 149, 158, 0.28);
+      border-radius: 999px;
+    }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 10px 10px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.16s ease;
       user-select: none;
     }
 
-    .nav-item:hover {
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text-primary);
+    .session-item:hover {
+      background: var(--hover-bg);
     }
 
-    .nav-item.active {
-      background: rgba(142, 174, 255, 0.14);
-      color: #ffffff;
-      border-color: var(--accent-line);
-      box-shadow:
-        0 0 22px var(--accent-glow),
-        inset 0 1px 0 rgba(255, 255, 255, 0.24);
+    .session-item.active {
+      background: var(--selected-bg);
     }
 
-    .nav-left {
+    .avatar-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #FFFFFF;
+      letter-spacing: 0.3px;
+      box-shadow: 0 3px 10px rgba(22, 119, 255, 0.12);
+    }
+
+    .avatar.sm {
+      width: 36px;
+      height: 36px;
+      font-size: 12.5px;
+    }
+
+    .status-dot {
+      position: absolute;
+      right: 1px;
+      bottom: 1px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--online-green);
+      border: 2px solid #FFFFFF;
+    }
+
+    .session-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .session-row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .session-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .session-time {
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+    }
+
+    .session-row-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .session-preview {
+      font-size: 12.5px;
+      color: var(--text-secondary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .unread-badge {
+      min-width: 18px;
+      height: 18px;
+      padding: 0 5px;
+      border-radius: 999px;
+      background: var(--primary);
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* 左侧底部本机连接状态条 */
+    .sidebar-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 11px 14px;
+      border-top: 1px solid var(--border-subtle);
+      background: #FAFBFD;
+      flex-shrink: 0;
+    }
+
+    .me-info {
       display: flex;
       align-items: center;
       gap: 9px;
       min-width: 0;
     }
 
-    .nav-hash {
-      color: rgba(178, 202, 255, 0.72);
-      font-weight: 500;
+    .me-meta {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
     }
 
-    .nav-name {
+    .me-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-main);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    .node-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--online-dot);
-      box-shadow: 0 0 8px rgba(126, 247, 201, 0.75);
-      flex-shrink: 0;
-    }
-
-    .node-tag {
+    .me-net {
       font-size: 11px;
-      color: var(--text-muted);
-      flex-shrink: 0;
-    }
-
-    .sidebar-footer {
-      margin-top: 12px;
-      padding: 10px 12px;
-      border-radius: var(--radius-md);
-      background: rgba(255, 255, 255, 0.035);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      font-size: 12px;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      gap: 5px;
     }
 
-    .sidebar-footer strong {
-      color: var(--text-primary);
+    .net-led {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--online-green);
+    }
+
+    .net-led.offline {
+      background: var(--offline-red);
+    }
+
+    .link-btn {
+      border: none;
+      background: transparent;
+      color: var(--primary);
+      font-size: 12px;
       font-weight: 500;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 8px;
+      transition: background 0.16s ease;
     }
 
-    /* 右侧主聊天区域 */
-    .chat-stage {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      min-height: 0;
+    .link-btn:hover {
+      background: var(--selected-bg);
     }
 
-    .chat-card {
-      flex: 1;
+    /* ========= 右侧聊天主窗口 ========= */
+    .chat-panel {
       display: flex;
       flex-direction: column;
-      border-radius: var(--radius-lg);
       min-height: 0;
-      overflow: hidden;
+      background: linear-gradient(135deg, var(--chat-bg-start) 0%, var(--chat-bg-end) 100%);
     }
 
     .chat-header {
+      height: 64px;
+      padding: 0 22px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 14px 20px;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.52);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.65);
       flex-shrink: 0;
     }
 
-    .chat-header-title {
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--text-primary);
+    .chat-title-group {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      min-width: 0;
     }
 
-    .chat-header-desc {
+    .chat-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-subtitle {
       font-size: 12px;
-      color: var(--text-muted);
+      color: var(--text-secondary);
+      padding: 2px 9px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(31, 35, 41, 0.05);
+      white-space: nowrap;
     }
 
-    .messages-scroll {
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .icon-btn {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      color: #4E5969;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.16s ease, color 0.16s ease;
+    }
+
+    .icon-btn:hover {
+      background: rgba(255, 255, 255, 0.78);
+      color: var(--primary);
+    }
+
+    .icon-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 1.75;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* 消息区 */
+    .chat-body {
       flex: 1;
       overflow-y: auto;
-      padding: 18px 22px;
+      padding: 18px 24px 20px;
       display: flex;
       flex-direction: column;
       gap: 14px;
       scroll-behavior: smooth;
     }
 
-    /* 细腻滚动条 */
-    .messages-scroll::-webkit-scrollbar,
-    .node-list::-webkit-scrollbar {
-      width: 5px;
+    .time-divider {
+      align-self: center;
+      font-size: 11.5px;
+      color: var(--text-secondary);
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.5);
     }
 
-    .messages-scroll::-webkit-scrollbar-thumb,
-    .node-list::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.14);
+    .sys-notice {
+      align-self: center;
+      font-size: 12px;
+      color: var(--text-secondary);
+      padding: 4px 12px;
       border-radius: 999px;
+      background: rgba(255, 255, 255, 0.62);
+      border: 1px solid rgba(255, 255, 255, 0.8);
     }
 
     .msg-row {
       display: flex;
-      flex-direction: column;
-      max-width: 74%;
-      animation: fadeRise 0.24s ease-out;
+      align-items: flex-start;
+      gap: 10px;
+      max-width: 76%;
+      animation: msgIn 0.2s ease-out;
+    }
+
+    .msg-row.peer {
+      align-self: flex-start;
     }
 
     .msg-row.self {
       align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+
+    .msg-content-col {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .msg-row.self .msg-content-col {
       align-items: flex-end;
     }
 
-    .msg-row.other {
-      align-self: flex-start;
-      align-items: flex-start;
-    }
-
-    .msg-row.system {
-      align-self: center;
-      max-width: 90%;
-    }
-
-    .msg-meta {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 11.5px;
-      color: var(--text-muted);
-      margin-bottom: 5px;
+    .msg-sender-name {
+      font-size: 12px;
+      color: var(--text-secondary);
       padding: 0 4px;
     }
 
-    .msg-sender {
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
     .msg-bubble {
-      padding: 11px 15px;
-      border-radius: 16px;
+      padding: 10px 14px;
+      border-radius: 14px;
       font-size: 14px;
       line-height: 1.55;
-      color: var(--text-primary);
-      background: rgba(255, 255, 255, 0.045);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      box-shadow:
-        0 8px 24px rgba(3, 6, 20, 0.26),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
+      color: var(--text-main);
       word-break: break-word;
+      white-space: pre-wrap;
+      box-shadow: var(--shadow-bubble);
+    }
+
+    .msg-row.peer .msg-bubble {
+      background: var(--bubble-peer);
+      border-top-left-radius: 4px;
     }
 
     .msg-row.self .msg-bubble {
-      background: var(--self-bg);
-      border-color: var(--self-border);
-      border-bottom-right-radius: 6px;
+      background: var(--bubble-self);
+      border-top-right-radius: 4px;
     }
 
-    .msg-row.other .msg-bubble {
-      border-bottom-left-radius: 6px;
-    }
-
-    .msg-row.private .msg-bubble {
-      background: var(--private-bg);
-      border-color: var(--private-border);
-    }
-
-    .system-pill {
-      font-size: 12px;
-      color: var(--text-muted);
-      padding: 5px 14px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.035);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-    }
-
-    /* 底部整块磨砂玻璃输入条 */
-    .composer-bar {
+    /* ========= 底部纯白输入工具栏 ========= */
+    .composer-area {
+      position: relative;
+      background: #FFFFFF;
+      border-top: 1px solid var(--border-subtle);
+      padding: 10px 18px 14px;
       display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px 10px 16px;
-      border-radius: var(--radius-lg);
+      flex-direction: column;
+      gap: 8px;
       flex-shrink: 0;
     }
 
-    .pm-chip {
-      display: none;
+    .toolbar {
+      display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 5px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      color: #dcd2ff;
-      background: rgba(154, 128, 255, 0.18);
-      border: 1px solid rgba(186, 166, 255, 0.32);
-      white-space: nowrap;
-      cursor: pointer;
+      gap: 4px;
     }
 
-    .pm-chip.visible {
-      display: inline-flex;
+    .toolbar .icon-btn {
+      width: 32px;
+      height: 32px;
+      color: #646A73;
     }
 
-    .composer-input {
-      flex: 1;
-      background: transparent;
+    .toolbar .icon-btn:hover {
+      background: var(--hover-bg);
+      color: var(--primary);
+    }
+
+    .composer-textarea {
+      width: 100%;
+      height: 68px;
+      resize: none;
       border: none;
       outline: none;
-      color: var(--text-primary);
+      background: transparent;
+      font-family: inherit;
       font-size: 14px;
-      padding: 6px 4px;
+      line-height: 1.55;
+      color: var(--text-main);
     }
 
-    .composer-input::placeholder {
-      color: var(--text-muted);
+    .composer-textarea::placeholder {
+      color: var(--text-tertiary);
     }
 
-    /* 微立体按压发送按钮 */
+    .composer-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .composer-hint {
+      font-size: 11.5px;
+      color: var(--text-tertiary);
+    }
+
     .send-btn {
       appearance: none;
-      border: 1px solid rgba(210, 224, 255, 0.34);
-      border-radius: 13px;
-      padding: 9px 20px;
+      border: none;
+      border-radius: 10px;
+      background: var(--primary);
+      color: #FFFFFF;
       font-size: 13.5px;
       font-weight: 500;
-      letter-spacing: 0.4px;
-      color: #f6f8ff;
+      padding: 8px 24px;
       cursor: pointer;
-      background: linear-gradient(
-        180deg,
-        rgba(146, 178, 255, 0.32) 0%,
-        rgba(98, 128, 232, 0.24) 100%
-      );
-      box-shadow:
-        0 6px 16px rgba(6, 10, 32, 0.45),
-        0 1px 0 rgba(255, 255, 255, 0.25) inset,
-        0 -2px 4px rgba(10, 16, 48, 0.35) inset;
-      transition: transform 0.12s ease, box-shadow 0.18s ease, background 0.2s ease;
+      box-shadow: 0 4px 12px rgba(22, 119, 255, 0.25);
+      transition: background 0.16s ease, transform 0.1s ease, box-shadow 0.16s ease;
     }
 
     .send-btn:hover {
-      background: linear-gradient(
-        180deg,
-        rgba(162, 192, 255, 0.42) 0%,
-        rgba(110, 142, 245, 0.3) 100%
-      );
-      box-shadow:
-        0 8px 22px rgba(62, 98, 220, 0.35),
-        0 1px 0 rgba(255, 255, 255, 0.35) inset;
+      background: var(--primary-hover);
+      box-shadow: 0 6px 16px rgba(22, 119, 255, 0.32);
     }
 
     .send-btn:active {
-      transform: translateY(1.5px) scale(0.985);
-      box-shadow:
-        0 2px 6px rgba(4, 8, 26, 0.5),
-        0 2px 6px rgba(8, 14, 42, 0.45) inset;
+      background: var(--primary-active);
+      transform: translateY(1px);
     }
 
-    /* 连接设置悬浮弹窗 */
-    .modal-backdrop {
+    /* 轻量表情浮层 */
+    .emoji-popover {
+      position: absolute;
+      left: 18px;
+      bottom: calc(100% + 8px);
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-light);
+      border-radius: 14px;
+      padding: 10px;
+      box-shadow: 0 12px 32px rgba(31, 56, 110, 0.14);
+      display: none;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 4px;
+      z-index: 15;
+    }
+
+    .emoji-popover.open {
+      display: grid;
+    }
+
+    .emoji-btn {
+      width: 34px;
+      height: 34px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      font-size: 18px;
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+
+    .emoji-btn:hover {
+      background: var(--selected-bg);
+    }
+
+    /* 顶部轻提示 Toast */
+    .toast {
+      position: fixed;
+      top: 26px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-10px);
+      background: rgba(31, 35, 41, 0.86);
+      color: #FFFFFF;
+      font-size: 12.5px;
+      padding: 8px 16px;
+      border-radius: 999px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 40;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* 连接设置弹窗 */
+    .modal-mask {
       position: fixed;
       inset: 0;
-      z-index: 20;
-      background: rgba(4, 7, 20, 0.56);
-      backdrop-filter: blur(8px);
+      z-index: 30;
+      background: rgba(31, 35, 41, 0.28);
+      backdrop-filter: blur(4px);
       display: none;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 16px;
     }
 
-    .modal-backdrop.open {
+    .modal-mask.open {
       display: flex;
     }
 
-    .modal-card {
+    .modal-box {
       width: 100%;
-      max-width: 400px;
-      border-radius: 22px;
-      padding: 24px;
+      max-width: 390px;
+      background: #FFFFFF;
+      border-radius: 16px;
+      padding: 22px 24px;
+      box-shadow: 0 20px 56px rgba(31, 56, 110, 0.2);
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 14px;
     }
 
     .modal-title {
       font-size: 16px;
       font-weight: 600;
-      color: var(--text-primary);
+      color: var(--text-main);
     }
 
-    .modal-desc {
+    .modal-sub {
       font-size: 12.5px;
-      color: var(--text-muted);
+      color: var(--text-secondary);
       line-height: 1.5;
     }
 
-    .field-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .field-row {
+    .form-row {
       display: grid;
       grid-template-columns: 2fr 1fr;
       gap: 10px;
     }
 
-    .field-label {
+    .form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .form-field label {
       font-size: 12px;
       color: var(--text-secondary);
     }
 
-    .field-input {
-      width: 100%;
-      padding: 9px 12px;
-      border-radius: 11px;
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      background: rgba(255, 255, 255, 0.06);
-      color: var(--text-primary);
+    .form-field input {
+      height: 38px;
+      padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border-light);
+      background: #F7F8FA;
       font-size: 13.5px;
+      color: var(--text-main);
       outline: none;
     }
 
-    .field-input:focus {
-      border-color: var(--accent-line);
-      box-shadow: 0 0 14px rgba(142, 174, 255, 0.22);
+    .form-field input:focus {
+      background: #FFFFFF;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
     }
 
-    .modal-actions {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      margin-top: 4px;
-    }
-
-    .modal-status {
-      font-size: 12px;
-      color: #a9c6ff;
+    .modal-msg {
       min-height: 16px;
+      font-size: 12px;
+      color: var(--primary);
     }
 
-    @keyframes fadeRise {
-      from {
-        opacity: 0;
-        transform: translateY(6px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 2px;
     }
 
-    @media (max-width: 780px) {
-      .app-shell {
-        padding: 10px;
-      }
-      .workspace {
+    .btn-subtle {
+      border: 1px solid var(--border-light);
+      background: #F7F8FA;
+      color: var(--text-main);
+      font-size: 13px;
+      padding: 7px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .btn-subtle:hover {
+      background: var(--selected-bg);
+      color: var(--primary);
+      border-color: transparent;
+    }
+
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 760px) {
+      .desktop-stage { padding: 0; }
+      .im-window {
+        max-height: none;
+        border-radius: 0;
         grid-template-columns: 1fr;
       }
-      .sidebar {
-        display: none;
-      }
+      .sidebar { display: none; }
     }
   </style>
 </head>
 <body>
-  <canvas id="starfield"></canvas>
-
-  <div class="app-shell">
-    <!-- 顶部状态栏 -->
-    <header class="topbar glass-layer-2">
-      <div class="brand-group">
-        <span id="statusOrb" class="brand-orb"></span>
-        <span id="lanName" class="lan-title">StarLAN · 局域网星空</span>
-        <span id="lanAddr" class="lan-sub">192.168.1.100:8888</span>
-      </div>
-      <div class="topbar-right">
-        <div class="pill-badge">
-          <span class="pill-dot"></span>
-          <span>在线节点 <strong id="onlineCount">0</strong></span>
+  <div class="desktop-stage">
+    <div class="im-window">
+      <!-- 左侧纯白会话面板 -->
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="7"></circle>
+              <line x1="20" y1="20" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input id="searchInput" class="search-input" type="text" placeholder="搜索联系人或房间" />
+          </div>
+          <button id="newBtn" class="new-btn" type="button" title="连接 / 切换局域网服务端">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          </button>
         </div>
-        <button id="openConnectBtn" class="ghost-btn" type="button">连接设置</button>
-      </div>
-    </header>
 
-    <!-- 主工作区 -->
-    <main class="workspace">
-      <!-- 左侧悬浮频道与节点栏 -->
-      <aside class="sidebar glass-layer-1">
-        <div class="section-label">局域网频道</div>
-        <ul id="channelList" class="channel-list">
-          <li class="nav-item active" data-channel="lobby">
-            <span class="nav-left">
-              <span class="nav-hash">#</span>
-              <span class="nav-name">公共大厅</span>
-            </span>
-            <span class="node-tag">TCP</span>
-          </li>
-          <li class="nav-item" data-channel="private">
-            <span class="nav-left">
-              <span class="nav-hash">@</span>
-              <span class="nav-name">私聊消息</span>
-            </span>
-            <span class="node-tag">点对点</span>
-          </li>
-        </ul>
-
-        <div class="section-label">在线节点（点击私聊）</div>
-        <ul id="nodeList" class="node-list"></ul>
+        <div id="sessionList" class="session-list"></div>
 
         <div class="sidebar-footer">
-          <span>当前身份</span>
-          <strong id="currentUserLabel">未登录</strong>
+          <div class="me-info">
+            <div id="meAvatar" class="avatar sm" style="background:linear-gradient(135deg,#4F8BFF,#7B68EE);">A</div>
+            <div class="me-meta">
+              <span id="meName" class="me-name">未登录</span>
+              <span class="me-net">
+                <span id="netLed" class="net-led"></span>
+                <span id="netText">127.0.0.1:8888</span>
+              </span>
+            </div>
+          </div>
+          <button id="openConnBtn" class="link-btn" type="button">连接设置</button>
         </div>
       </aside>
 
-      <!-- 右侧聊天主区域 -->
-      <section class="chat-stage">
-        <div class="chat-card glass-layer-1">
-          <div class="chat-header">
-            <div class="chat-header-title">
-              <span id="activeChannelTitle"># 公共大厅</span>
-            </div>
-            <span id="activeChannelDesc" class="chat-header-desc">
-              自定义 4B 长度前缀 + JSON 协议 · 实时广播
-            </span>
+      <!-- 右侧聊天主窗口 -->
+      <section class="chat-panel">
+        <header class="chat-header">
+          <div class="chat-title-group">
+            <h1 id="chatTitle" class="chat-title">局域网公共大厅</h1>
+            <span id="chatSubtitle" class="chat-subtitle">在线 4 人</span>
           </div>
 
-          <div id="messagesContainer" class="messages-scroll"></div>
-        </div>
+          <div class="header-actions">
+            <button class="icon-btn" type="button" data-action="语音通话" title="语音通话">
+              <svg viewBox="0 0 24 24">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.34 1.78.65 2.62a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.46-1.22a2 2 0 0 1 2.11-.45c.84.31 1.72.53 2.62.65A2 2 0 0 1 22 16.92z"></path>
+              </svg>
+            </button>
+            <button class="icon-btn" type="button" data-action="视频通话" title="视频通话">
+              <svg viewBox="0 0 24 24">
+                <polygon points="23 7 16 12 23 17 23 7"></polygon>
+                <rect x="1" y="5" width="15" height="14" rx="2.5" ry="2.5"></rect>
+              </svg>
+            </button>
+            <button class="icon-btn" type="button" data-action="屏幕共享" title="屏幕共享">
+              <svg viewBox="0 0 24 24">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+                <polyline points="9 10 12 7 15 10"></polyline>
+                <line x1="12" y1="7" x2="12" y2="13"></line>
+              </svg>
+            </button>
+            <button id="moreBtn" class="icon-btn" type="button" title="连接设置 / 更多操作">
+              <svg viewBox="0 0 24 24">
+                <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"></circle>
+                <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle>
+                <circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"></circle>
+              </svg>
+            </button>
+          </div>
+        </header>
 
-        <!-- 底部整块磨砂玻璃输入条 -->
-        <form id="composerForm" class="composer-bar glass-layer-2" autocomplete="off">
-          <span id="pmChip" class="pm-chip" title="点击取消私聊">
-            <span id="pmChipText">@Bob</span>
-            <span>×</span>
-          </span>
-          <input
+        <div id="chatBody" class="chat-body"></div>
+
+        <!-- 底部纯白输入工具栏 -->
+        <div class="composer-area">
+          <div id="emojiPopover" class="emoji-popover">
+            <button class="emoji-btn" type="button">😊</button>
+            <button class="emoji-btn" type="button">😂</button>
+            <button class="emoji-btn" type="button">👍</button>
+            <button class="emoji-btn" type="button">🎉</button>
+            <button class="emoji-btn" type="button">👌</button>
+            <button class="emoji-btn" type="button">🚀</button>
+            <button class="emoji-btn" type="button">💡</button>
+            <button class="emoji-btn" type="button">🔥</button>
+            <button class="emoji-btn" type="button">🤝</button>
+            <button class="emoji-btn" type="button">✨</button>
+            <button class="emoji-btn" type="button">💻</button>
+            <button class="emoji-btn" type="button">📡</button>
+          </div>
+
+          <div class="toolbar">
+            <button id="emojiToggleBtn" class="icon-btn" type="button" title="表情">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9.5"></circle>
+                <path d="M8.5 14.5c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2"></path>
+                <circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"></circle>
+                <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"></circle>
+              </svg>
+            </button>
+            <button class="icon-btn" type="button" data-action="截图" title="截图">
+              <svg viewBox="0 0 24 24">
+                <circle cx="6" cy="6" r="2.5"></circle>
+                <circle cx="6" cy="18" r="2.5"></circle>
+                <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+              </svg>
+            </button>
+            <button class="icon-btn" type="button" data-action="发送文件" title="文件">
+              <svg viewBox="0 0 24 24">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </button>
+            <button class="icon-btn" type="button" data-action="发送图片" title="图片">
+              <svg viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="16" rx="2.5" ry="2.5"></rect>
+                <circle cx="8.5" cy="9.5" r="1.5"></circle>
+                <polyline points="21 16 16 11 5 20"></polyline>
+              </svg>
+            </button>
+            <button class="icon-btn" type="button" data-action="语音消息" title="语音">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="22"></line>
+              </svg>
+            </button>
+          </div>
+
+          <textarea
             id="msgInput"
-            class="composer-input"
-            type="text"
-            placeholder="输入消息发送到局域网，或使用 @用户名 发送私聊..."
-          />
-          <button class="send-btn" type="submit">发送</button>
-        </form>
+            class="composer-textarea"
+            placeholder="输入消息，按 Enter 发送，Shift + Enter 换行..."
+          ></textarea>
+
+          <div class="composer-footer">
+            <span class="composer-hint">TCP 4B 长度前缀协议 · 局域网实时通信</span>
+            <button id="sendBtn" class="send-btn" type="button">发送</button>
+          </div>
+        </div>
       </section>
-    </main>
+    </div>
   </div>
 
-  <!-- 连接设置模态窗 -->
-  <div id="connectModal" class="modal-backdrop">
-    <div class="modal-card glass-layer-2">
+  <div id="toast" class="toast"></div>
+
+  <!-- 连接局域网服务端弹窗 -->
+  <div id="connModal" class="modal-mask">
+    <div class="modal-box">
       <div>
         <div class="modal-title">连接局域网聊天室</div>
-        <div class="modal-desc">
-          支持 UDP 广播自动发现同局域网内的服务端，或手动输入 TCP 地址与端口。
+        <div class="modal-sub">支持 UDP 局域网广播自动发现服务端，或手动填写服务端 IP 与 TCP 端口。</div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-field">
+          <label for="hostInput">服务端 IP</label>
+          <input id="hostInput" value="127.0.0.1" />
+        </div>
+        <div class="form-field">
+          <label for="portInput">TCP 端口</label>
+          <input id="portInput" value="8888" />
         </div>
       </div>
 
-      <div class="field-row">
-        <div class="field-group">
-          <label class="field-label" for="inputHost">服务端 IP</label>
-          <input id="inputHost" class="field-input" value="127.0.0.1" />
-        </div>
-        <div class="field-group">
-          <label class="field-label" for="inputPort">TCP 端口</label>
-          <input id="inputPort" class="field-input" value="8888" />
-        </div>
+      <div class="form-field">
+        <label for="nameInput">我的昵称</label>
+        <input id="nameInput" value="Alice" placeholder="输入 1~20 个非空白字符" />
       </div>
 
-      <div class="field-group">
-        <label class="field-label" for="inputName">节点昵称</label>
-        <input id="inputName" class="field-input" placeholder="例如 Alice" value="Alice" />
-      </div>
+      <div id="modalMsg" class="modal-msg"></div>
 
-      <div id="modalStatus" class="modal-status"></div>
-
-      <div class="modal-actions">
-        <button id="discoverBtn" class="ghost-btn" type="button">UDP 自动发现</button>
+      <div class="modal-footer">
+        <button id="discoverBtn" class="btn-subtle" type="button">UDP 自动发现</button>
         <div style="display:flex; gap:8px;">
-          <button id="closeModalBtn" class="ghost-btn" type="button">关闭</button>
-          <button id="connectSubmitBtn" class="send-btn" type="button">连接</button>
+          <button id="closeModalBtn" class="btn-subtle" type="button">取消</button>
+          <button id="connectBtn" class="send-btn" type="button" style="padding:7px 18px;">连接</button>
         </div>
       </div>
     </div>
   </div>
 
   <script>
-    /* ========= 1. 星空节点粒子动画 ========= */
-    (function initStarfield() {
-      const canvas = document.getElementById("starfield");
-      const ctx = canvas.getContext("2d");
-      let width = 0;
-      let height = 0;
-      const STAR_COUNT = 68;
-      const stars = [];
+    const LOBBY_ID = "__lobby__";
+    const AVATAR_GRADIENTS = [
+      "linear-gradient(135deg, #4B8BFF, #6C63FF)",
+      "linear-gradient(135deg, #38BDF8, #3B82F6)",
+      "linear-gradient(135deg, #818CF8, #A855F7)",
+      "linear-gradient(135deg, #34D399, #0EA5E9)",
+      "linear-gradient(135deg, #F472B6, #8B5CF6)",
+      "linear-gradient(135deg, #60A5FA, #2DD4BF)",
+    ];
 
-      function resize() {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        width = window.innerWidth;
-        height = window.innerHeight;
-        canvas.width = Math.floor(width * dpr);
-        canvas.height = Math.floor(height * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    function avatarStyle(name) {
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) {
+        hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
       }
+      return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length];
+    }
 
-      function createStars() {
-        stars.length = 0;
-        for (let i = 0; i < STAR_COUNT; i++) {
-          stars.push({
-            x: Math.random() * width,
-            y: Math.random() * height,
-            r: Math.random() * 1.4 + 0.45,
-            vx: (Math.random() - 0.5) * 0.16,
-            vy: (Math.random() - 0.5) * 0.14 - 0.03,
-            alpha: Math.random() * 0.55 + 0.25,
-            phase: Math.random() * Math.PI * 2,
-          });
-        }
-      }
+    function avatarInitial(name) {
+      if (name === LOBBY_ID) return "群";
+      return (name || "?").trim().slice(0, 2).toUpperCase();
+    }
 
-      function draw(t) {
-        ctx.clearRect(0, 0, width, height);
+    function nowHM() {
+      return new Date().toTimeString().slice(0, 5);
+    }
 
-        // 微弱的局域网节点连线
-        for (let i = 0; i < stars.length; i++) {
-          const a = stars[i];
-          a.x += a.vx;
-          a.y += a.vy;
-          if (a.x < -10) a.x = width + 10;
-          if (a.x > width + 10) a.x = -10;
-          if (a.y < -10) a.y = height + 10;
-          if (a.y > height + 10) a.y = -10;
+    function nowHMS() {
+      return new Date().toTimeString().slice(0, 8);
+    }
 
-          for (let j = i + 1; j < stars.length; j++) {
-            const b = stars[j];
-            const dx = a.x - b.x;
-            const dy = a.y - b.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist < 115) {
-              ctx.strokeStyle = `rgba(176, 198, 255, ${(1 - dist / 115) * 0.08})`;
-              ctx.lineWidth = 0.7;
-              ctx.beginPath();
-              ctx.moveTo(a.x, a.y);
-              ctx.lineTo(b.x, b.y);
-              ctx.stroke();
-            }
-          }
-
-          const twinkle = 0.72 + 0.28 * Math.sin(t * 0.0012 + a.phase);
-          ctx.fillStyle = `rgba(235, 242, 255, ${a.alpha * twinkle})`;
-          ctx.beginPath();
-          ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        requestAnimationFrame(draw);
-      }
-
-      resize();
-      createStars();
-      window.addEventListener("resize", () => {
-        resize();
-        createStars();
-      });
-      requestAnimationFrame(draw);
-    })();
-
-    /* ========= 2. 聊天室状态与交互 ========= */
     const state = {
       liveMode: window.location.protocol.startsWith("http"),
       connected: false,
-      username: "",
-      activeChannel: "lobby", // "lobby" | "private"
-      pmTarget: null,
+      username: "Alice",
+      host: "192.168.1.100",
+      port: 8888,
       users: [],
-      messages: [],
+      activeId: LOBBY_ID,
+      search: "",
+      // sessions: { [id]: { id, name, isLobby, messages: [], unread: 0, lastText, lastTime } }
+      sessions: {},
       eventSource: null,
     };
 
     const els = {
-      statusOrb: document.getElementById("statusOrb"),
-      lanName: document.getElementById("lanName"),
-      lanAddr: document.getElementById("lanAddr"),
-      onlineCount: document.getElementById("onlineCount"),
-      nodeList: document.getElementById("nodeList"),
-      channelList: document.getElementById("channelList"),
-      currentUserLabel: document.getElementById("currentUserLabel"),
-      activeChannelTitle: document.getElementById("activeChannelTitle"),
-      activeChannelDesc: document.getElementById("activeChannelDesc"),
-      messagesContainer: document.getElementById("messagesContainer"),
-      composerForm: document.getElementById("composerForm"),
+      sessionList: document.getElementById("sessionList"),
+      searchInput: document.getElementById("searchInput"),
+      chatTitle: document.getElementById("chatTitle"),
+      chatSubtitle: document.getElementById("chatSubtitle"),
+      chatBody: document.getElementById("chatBody"),
       msgInput: document.getElementById("msgInput"),
-      pmChip: document.getElementById("pmChip"),
-      pmChipText: document.getElementById("pmChipText"),
-      connectModal: document.getElementById("connectModal"),
-      openConnectBtn: document.getElementById("openConnectBtn"),
-      closeModalBtn: document.getElementById("closeModalBtn"),
+      sendBtn: document.getElementById("sendBtn"),
+      meAvatar: document.getElementById("meAvatar"),
+      meName: document.getElementById("meName"),
+      netLed: document.getElementById("netLed"),
+      netText: document.getElementById("netText"),
+      emojiToggleBtn: document.getElementById("emojiToggleBtn"),
+      emojiPopover: document.getElementById("emojiPopover"),
+      toast: document.getElementById("toast"),
+      connModal: document.getElementById("connModal"),
+      hostInput: document.getElementById("hostInput"),
+      portInput: document.getElementById("portInput"),
+      nameInput: document.getElementById("nameInput"),
+      modalMsg: document.getElementById("modalMsg"),
       discoverBtn: document.getElementById("discoverBtn"),
-      connectSubmitBtn: document.getElementById("connectSubmitBtn"),
-      inputHost: document.getElementById("inputHost"),
-      inputPort: document.getElementById("inputPort"),
-      inputName: document.getElementById("inputName"),
-      modalStatus: document.getElementById("modalStatus"),
+      connectBtn: document.getElementById("connectBtn"),
+      closeModalBtn: document.getElementById("closeModalBtn"),
+      openConnBtn: document.getElementById("openConnBtn"),
+      newBtn: document.getElementById("newBtn"),
+      moreBtn: document.getElementById("moreBtn"),
     };
 
-    function nowTime() {
-      return new Date().toTimeString().slice(0, 8);
+    let toastTimer = null;
+    function showToast(msg) {
+      els.toast.textContent = msg;
+      els.toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2000);
     }
 
-    function setPmTarget(user) {
-      state.pmTarget = user;
-      if (user) {
-        els.pmChipText.textContent = `@${user}`;
-        els.pmChip.classList.add("visible");
-        els.msgInput.placeholder = `向 ${user} 发送私聊消息...`;
-        els.msgInput.focus();
+    function ensureSession(id, name, isLobby = false) {
+      if (!state.sessions[id]) {
+        state.sessions[id] = {
+          id,
+          name,
+          isLobby,
+          messages: [],
+          unread: 0,
+          lastText: isLobby ? "点击开始局域网群聊" : "在线 · 点击发送私聊消息",
+          lastTime: "",
+        };
+      }
+      return state.sessions[id];
+    }
+
+    function syncUserSessions(users) {
+      state.users = users;
+      ensureSession(LOBBY_ID, "局域网公共大厅", true);
+      users.forEach((u) => {
+        if (u !== state.username) {
+          ensureSession(u, u, false);
+        }
+      });
+      renderSidebar();
+      renderHeader();
+    }
+
+    function appendMessage(sessionId, msg) {
+      const session =
+        sessionId === LOBBY_ID
+          ? ensureSession(LOBBY_ID, "局域网公共大厅", true)
+          : ensureSession(sessionId, sessionId, false);
+      session.messages.push(msg);
+      if (msg.kind === "system") {
+        session.lastText = `[系统] ${msg.text}`;
       } else {
-        els.pmChip.classList.remove("visible");
-        els.msgInput.placeholder = "输入消息发送到局域网，或使用 @用户名 发送私聊...";
+        session.lastText = session.isLobby ? `${msg.sender}: ${msg.text}` : msg.text;
+      }
+      session.lastTime = (msg.ts || nowHMS()).slice(0, 5);
+      if (state.activeId !== sessionId && msg.kind !== "system") {
+        session.unread += 1;
+      }
+      renderSidebar();
+      if (state.activeId === sessionId) {
+        renderMessages();
       }
     }
 
-    function renderUsers() {
-      els.onlineCount.textContent = String(state.users.length);
-      els.nodeList.innerHTML = "";
-      state.users.forEach((user) => {
-        const li = document.createElement("li");
-        li.className = "nav-item" + (state.pmTarget === user ? " active" : "");
-        li.innerHTML = `
-          <span class="nav-left">
-            <span class="node-dot"></span>
-            <span class="nav-name"></span>
-          </span>
-          <span class="node-tag">${user === state.username ? "本机" : "在线"}</span>
-        `;
-        li.querySelector(".nav-name").textContent = user;
-        if (user !== state.username) {
-          li.addEventListener("click", () => {
-            setPmTarget(state.pmTarget === user ? null : user);
-            renderUsers();
-          });
+    function renderMe() {
+      els.meName.textContent = state.connected ? state.username : "未登录";
+      els.meAvatar.textContent = avatarInitial(state.username);
+      els.meAvatar.style.background = avatarStyle(state.username);
+      els.netLed.classList.toggle("offline", !state.connected);
+      els.netText.textContent = state.connected ? `${state.host}:${state.port}` : "未连接服务端";
+    }
+
+    function renderHeader() {
+      const active = state.sessions[state.activeId] || ensureSession(LOBBY_ID, "局域网公共大厅", true);
+      els.chatTitle.textContent = active.name;
+      if (active.isLobby) {
+        els.chatSubtitle.textContent = `局域网群聊 · 在线 ${state.users.length} 人`;
+      } else {
+        const isOnline = state.users.includes(active.id);
+        els.chatSubtitle.textContent = isOnline ? "在线 · 点对点私聊" : "离线";
+      }
+    }
+
+    function renderSidebar() {
+      const q = state.search.trim().toLowerCase();
+      const orderedIds = [
+        LOBBY_ID,
+        ...Object.keys(state.sessions).filter((id) => id !== LOBBY_ID),
+      ];
+
+      els.sessionList.innerHTML = "";
+      orderedIds.forEach((id) => {
+        const s = state.sessions[id];
+        if (!s) return;
+        if (q && !s.name.toLowerCase().includes(q) && !s.lastText.toLowerCase().includes(q)) {
+          return;
         }
-        els.nodeList.appendChild(li);
+
+        const item = document.createElement("div");
+        item.className = "session-item" + (state.activeId === id ? " active" : "");
+
+        const isOnline = s.isLobby ? state.connected : state.users.includes(s.id);
+        item.innerHTML = `
+          <div class="avatar-wrap">
+            <div class="avatar" style="background:${s.isLobby ? "linear-gradient(135deg,#1677FF,#69B1FF)" : avatarStyle(s.name)};">${avatarInitial(s.isLobby ? LOBBY_ID : s.name)}</div>
+            ${isOnline ? '<span class="status-dot"></span>' : ""}
+          </div>
+          <div class="session-main">
+            <div class="session-row-top">
+              <span class="session-name"></span>
+              <span class="session-time"></span>
+            </div>
+            <div class="session-row-bottom">
+              <span class="session-preview"></span>
+              ${s.unread > 0 ? `<span class="unread-badge">${s.unread > 99 ? "99+" : s.unread}</span>` : ""}
+            </div>
+          </div>
+        `;
+        item.querySelector(".session-name").textContent = s.name;
+        item.querySelector(".session-time").textContent = s.lastTime;
+        item.querySelector(".session-preview").textContent = s.lastText;
+
+        item.addEventListener("click", () => {
+          state.activeId = id;
+          s.unread = 0;
+          renderSidebar();
+          renderHeader();
+          renderMessages();
+          els.msgInput.focus();
+        });
+
+        els.sessionList.appendChild(item);
       });
     }
 
     function renderMessages() {
-      els.messagesContainer.innerHTML = "";
-      const filtered = state.messages.filter((m) => {
-        if (state.activeChannel === "private") {
-          return m.kind === "private" || m.kind === "system";
-        }
-        return true;
-      });
+      const active = state.sessions[state.activeId] || ensureSession(LOBBY_ID, "局域网公共大厅", true);
+      els.chatBody.innerHTML = "";
 
-      filtered.forEach((m) => {
-        const row = document.createElement("div");
+      let lastMinute = "";
+      active.messages.forEach((m) => {
+        const minute = (m.ts || "").slice(0, 5);
+        if (minute && minute !== lastMinute) {
+          const divider = document.createElement("div");
+          divider.className = "time-divider";
+          divider.textContent = minute;
+          els.chatBody.appendChild(divider);
+          lastMinute = minute;
+        }
+
         if (m.kind === "system") {
-          row.className = "msg-row system";
-          const pill = document.createElement("div");
-          pill.className = "system-pill";
-          pill.textContent = `${m.ts} · ${m.text}`;
-          row.appendChild(pill);
-        } else {
-          const isSelf = m.sender === state.username;
-          row.className = `msg-row ${isSelf ? "self" : "other"}${m.kind === "private" ? " private" : ""}`;
-
-          const meta = document.createElement("div");
-          meta.className = "msg-meta";
-          const label =
-            m.kind === "private"
-              ? isSelf
-                ? `私聊 → ${m.to}`
-                : `${m.sender} · 私聊`
-              : m.sender;
-          meta.innerHTML = `<span class="msg-sender"></span><span>${m.ts}</span>`;
-          meta.querySelector(".msg-sender").textContent = label;
-
-          const bubble = document.createElement("div");
-          bubble.className = "msg-bubble";
-          bubble.textContent = m.text;
-
-          row.appendChild(meta);
-          row.appendChild(bubble);
+          const notice = document.createElement("div");
+          notice.className = "sys-notice";
+          notice.textContent = m.text;
+          els.chatBody.appendChild(notice);
+          return;
         }
-        els.messagesContainer.appendChild(row);
+
+        const isSelf = m.sender === state.username;
+        const row = document.createElement("div");
+        row.className = `msg-row ${isSelf ? "self" : "peer"}`;
+
+        const avatar = document.createElement("div");
+        avatar.className = "avatar sm";
+        avatar.style.background = avatarStyle(m.sender);
+        avatar.textContent = avatarInitial(m.sender);
+
+        const col = document.createElement("div");
+        col.className = "msg-content-col";
+
+        if (active.isLobby && !isSelf) {
+          const senderEl = document.createElement("div");
+          senderEl.className = "msg-sender-name";
+          senderEl.textContent = m.sender;
+          col.appendChild(senderEl);
+        }
+
+        const bubble = document.createElement("div");
+        bubble.className = "msg-bubble";
+        bubble.textContent = m.text;
+        col.appendChild(bubble);
+
+        row.appendChild(avatar);
+        row.appendChild(col);
+        els.chatBody.appendChild(row);
       });
 
-      els.messagesContainer.scrollTop = els.messagesContainer.scrollHeight;
+      els.chatBody.scrollTop = els.chatBody.scrollHeight;
     }
 
-    function pushMessage(msg) {
-      state.messages.push(msg);
-      renderMessages();
-    }
+    /* ========= 发送消息 ========= */
+    async function sendCurrentMessage() {
+      const text = els.msgInput.value.trim();
+      if (!text) return;
+      els.msgInput.value = "";
+      els.emojiPopover.classList.remove("open");
 
-    function setConnectionVisual(connected, addrText, nameText) {
-      state.connected = connected;
-      els.statusOrb.classList.toggle("offline", !connected);
-      if (addrText) els.lanAddr.textContent = addrText;
-      if (nameText) els.lanName.textContent = nameText;
-      els.currentUserLabel.textContent = connected ? state.username : "未登录";
-    }
+      const isLobby = state.activeId === LOBBY_ID;
+      const to = isLobby ? null : state.activeId;
 
-    /* ========= 3. 频道切换与弹窗控制 ========= */
-    els.channelList.addEventListener("click", (e) => {
-      const item = e.target.closest(".nav-item");
-      if (!item) return;
-      state.activeChannel = item.dataset.channel;
-      els.channelList.querySelectorAll(".nav-item").forEach((el) => {
-        el.classList.toggle("active", el === item);
-      });
-      if (state.activeChannel === "lobby") {
-        els.activeChannelTitle.textContent = "# 公共大厅";
-        els.activeChannelDesc.textContent = "自定义 4B 长度前缀 + JSON 协议 · 实时广播";
-      } else {
-        els.activeChannelTitle.textContent = "@ 私聊消息";
-        els.activeChannelDesc.textContent = "仅收发双方可见 · 点对点定向转发";
+      if (!state.liveMode) {
+        appendMessage(state.activeId, {
+          kind: to ? "private" : "chat",
+          sender: state.username,
+          to: to || undefined,
+          text,
+          ts: nowHMS(),
+        });
+        return;
       }
-      renderMessages();
+
+      if (!state.connected) {
+        openModal();
+        return;
+      }
+
+      const res = await fetch("/api/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, text }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        showToast(data.error || "发送失败");
+      }
+    }
+
+    els.sendBtn.addEventListener("click", sendCurrentMessage);
+    els.msgInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendCurrentMessage();
+      }
     });
 
-    els.pmChip.addEventListener("click", () => {
-      setPmTarget(null);
-      renderUsers();
+    /* ========= 搜索、表情与工具栏交互 ========= */
+    els.searchInput.addEventListener("input", (e) => {
+      state.search = e.target.value;
+      renderSidebar();
     });
 
-    els.openConnectBtn.addEventListener("click", () => {
-      els.modalStatus.textContent = "";
-      els.connectModal.classList.add("open");
+    els.emojiToggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      els.emojiPopover.classList.toggle("open");
     });
 
-    els.closeModalBtn.addEventListener("click", () => {
-      els.connectModal.classList.remove("open");
+    els.emojiPopover.addEventListener("click", (e) => {
+      const btn = e.target.closest(".emoji-btn");
+      if (!btn) return;
+      els.msgInput.value += btn.textContent;
+      els.msgInput.focus();
+      els.emojiPopover.classList.remove("open");
     });
 
-    /* ========= 4. 真实 TCP 桥接模式 vs 独立预览演示模式 ========= */
-    function handleIncomingPacket(pkt) {
-      const ts = pkt.ts || nowTime();
+    document.addEventListener("click", (e) => {
+      if (!els.emojiPopover.contains(e.target) && e.target !== els.emojiToggleBtn) {
+        els.emojiPopover.classList.remove("open");
+      }
+    });
+
+    document.querySelectorAll("[data-action]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const action = btn.getAttribute("data-action");
+        showToast(`「${action}」可在后续扩展为独立 TCP/UDP 媒体通道`);
+      });
+    });
+
+    /* ========= 连接弹窗与真实 TCP/UDP 桥接 ========= */
+    function openModal() {
+      els.modalMsg.textContent = "";
+      els.connModal.classList.add("open");
+    }
+
+    els.openConnBtn.addEventListener("click", openModal);
+    els.newBtn.addEventListener("click", openModal);
+    els.moreBtn.addEventListener("click", openModal);
+    els.closeModalBtn.addEventListener("click", () => els.connModal.classList.remove("open"));
+
+    function handlePacket(pkt) {
+      const ts = pkt.ts || nowHMS();
       if (pkt.type === "CHAT") {
-        pushMessage({ kind: "chat", sender: pkt.sender, text: pkt.text, ts });
+        appendMessage(LOBBY_ID, { kind: "chat", sender: pkt.sender, text: pkt.text, ts });
       } else if (pkt.type === "PRIVATE") {
-        pushMessage({
+        const peer = pkt.sender === state.username ? pkt.to : pkt.sender;
+        appendMessage(peer, {
           kind: "private",
           sender: pkt.sender,
           to: pkt.to,
@@ -1029,74 +1324,73 @@
           ts,
         });
       } else if (pkt.type === "SYSTEM") {
-        pushMessage({ kind: "system", text: pkt.text, ts });
+        appendMessage(LOBBY_ID, { kind: "system", text: pkt.text, ts });
       } else if (pkt.type === "ERROR") {
-        pushMessage({ kind: "system", text: `提示：${pkt.text}`, ts });
+        showToast(pkt.text || "服务端返回错误");
       } else if (pkt.type === "USER_LIST") {
-        state.users = pkt.users || [];
-        renderUsers();
+        syncUserSessions(pkt.users || []);
       } else if (pkt.type === "DISCONNECTED") {
-        setConnectionVisual(false);
-        pushMessage({ kind: "system", text: pkt.text || "连接已断开", ts });
+        state.connected = false;
+        renderMe();
+        appendMessage(LOBBY_ID, { kind: "system", text: pkt.text || "连接已断开", ts });
       }
     }
 
-    async function startLiveSSE() {
-      if (state.eventSource) {
-        state.eventSource.close();
-      }
+    function startSSE() {
+      if (state.eventSource) state.eventSource.close();
       const es = new EventSource("/api/events");
       state.eventSource = es;
       es.onmessage = (ev) => {
         try {
-          handleIncomingPacket(JSON.parse(ev.data));
+          handlePacket(JSON.parse(ev.data));
         } catch (_) {}
       };
     }
 
     els.discoverBtn.addEventListener("click", async () => {
       if (!state.liveMode) {
-        els.inputHost.value = "192.168.1.100";
-        els.inputPort.value = "8888";
-        els.modalStatus.textContent = "演示模式：已模拟发现 LAN-ChatRoom (192.168.1.100:8888)";
+        els.hostInput.value = "192.168.1.100";
+        els.portInput.value = "8888";
+        els.modalMsg.textContent = "演示模式：已模拟发现局域网服务端 192.168.1.100:8888";
         return;
       }
-      els.modalStatus.textContent = "正在通过 UDP 广播探测局域网服务端...";
+      els.modalMsg.textContent = "正在广播 UDP 探测包寻找局域网服务端...";
       try {
         const res = await fetch("/api/discover");
         const data = await res.json();
         if (data.ok) {
-          els.inputHost.value = data.host;
-          els.inputPort.value = String(data.port);
-          els.modalStatus.textContent = `发现服务端: ${data.server_name} (${data.host}:${data.port})`;
+          els.hostInput.value = data.host;
+          els.portInput.value = String(data.port);
+          els.modalMsg.textContent = `已发现 ${data.server_name} (${data.host}:${data.port})`;
         } else {
-          els.modalStatus.textContent = "未收到局域网广播响应，请确认服务端已启动。";
+          els.modalMsg.textContent = "未收到局域网广播响应，请确认服务端已启动。";
         }
       } catch (err) {
-        els.modalStatus.textContent = `探测失败: ${err.message}`;
+        els.modalMsg.textContent = `自动发现失败: ${err.message}`;
       }
     });
 
-    els.connectSubmitBtn.addEventListener("click", async () => {
-      const host = els.inputHost.value.trim();
-      const port = Number(els.inputPort.value.trim());
-      const username = els.inputName.value.trim();
+    els.connectBtn.addEventListener("click", async () => {
+      const host = els.hostInput.value.trim();
+      const port = Number(els.portInput.value.trim());
+      const username = els.nameInput.value.trim();
       if (!host || !port || !username) {
-        els.modalStatus.textContent = "请完整填写服务端 IP、端口和昵称。";
+        els.modalMsg.textContent = "请完整填写服务端 IP、端口和昵称。";
         return;
       }
 
       if (!state.liveMode) {
+        state.host = host;
+        state.port = port;
         state.username = username;
-        if (!state.users.includes(username)) state.users.unshift(username);
-        setConnectionVisual(true, `${host}:${port}`, "StarLAN · 局域网星空");
-        renderUsers();
-        pushMessage({ kind: "system", text: `${username} 已接入局域网节点（本地预览模式）`, ts: nowTime() });
-        els.connectModal.classList.remove("open");
+        state.connected = true;
+        renderMe();
+        els.connModal.classList.remove("open");
+        showToast(`已切换身份为 ${username}`);
         return;
       }
 
-      els.modalStatus.textContent = `正在连接 ${host}:${port}...`;
+      els.modalMsg.textContent = `正在连接 ${host}:${port} ...`;
       try {
         const res = await fetch("/api/connect", {
           method: "POST",
@@ -1105,76 +1399,47 @@
         });
         const data = await res.json();
         if (!data.ok) {
-          els.modalStatus.textContent = data.error || "连接失败";
+          els.modalMsg.textContent = data.error || "连接失败";
           return;
         }
+        state.host = host;
+        state.port = port;
         state.username = data.username;
-        state.users = data.users || [];
-        setConnectionVisual(true, `${host}:${port}`, "StarLAN · 局域网星空");
-        renderUsers();
-        await startLiveSSE();
-        els.connectModal.classList.remove("open");
+        state.connected = true;
+        renderMe();
+        syncUserSessions(data.users || []);
+        startSSE();
+        els.connModal.classList.remove("open");
+        showToast("已成功接入局域网聊天室");
       } catch (err) {
-        els.modalStatus.textContent = `连接异常: ${err.message}`;
+        els.modalMsg.textContent = `连接异常: ${err.message}`;
       }
     });
 
-    els.composerForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const raw = els.msgInput.value.trim();
-      if (!raw) return;
+    /* ========= 启动初始化 ========= */
+    (async function init() {
+      ensureSession(LOBBY_ID, "局域网公共大厅", true);
 
-      let to = state.pmTarget;
-      let text = raw;
-      if (!to && raw.startsWith("@")) {
-        const idx = raw.indexOf(" ");
-        if (idx > 1) {
-          to = raw.slice(1, idx);
-          text = raw.slice(idx + 1).trim();
-        }
-      }
-      if (!text) return;
-      els.msgInput.value = "";
-
-      if (!state.liveMode) {
-        pushMessage({
-          kind: to ? "private" : "chat",
-          sender: state.username,
-          to: to || undefined,
-          text,
-          ts: nowTime(),
-        });
-        return;
-      }
-
-      if (!state.connected) {
-        els.connectModal.classList.add("open");
-        return;
-      }
-
-      await fetch("/api/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, text }),
-      });
-    });
-
-    /* ========= 5. 初始化 ========= */
-    (async function bootstrap() {
       if (state.liveMode) {
-        // 真实运行在 web_client.py 后端：查询当前状态，未连接则弹出连接窗口
         try {
           const res = await fetch("/api/status");
           const data = await res.json();
           if (data.connected) {
+            state.connected = true;
+            state.host = data.host;
+            state.port = data.port;
             state.username = data.username;
-            state.users = data.users || [];
-            setConnectionVisual(true, `${data.host}:${data.port}`, "StarLAN · 局域网星空");
-            renderUsers();
-            await startLiveSSE();
+            renderMe();
+            syncUserSessions(data.users || []);
+            renderMessages();
+            startSSE();
           } else {
-            setConnectionVisual(false, "未连接", "StarLAN · 局域网星空");
-            els.connectModal.classList.add("open");
+            state.connected = false;
+            renderMe();
+            renderSidebar();
+            renderHeader();
+            renderMessages();
+            openModal();
           }
           return;
         } catch (_) {
@@ -1182,17 +1447,29 @@
         }
       }
 
-      // 独立打开 HTML 预览模式：展示可交互的星空玻璃拟态示例数据
-      state.username = "Alice";
-      state.users = ["Alice", "Bob", "Node-03", "Lab-PC"];
-      setConnectionVisual(true, "192.168.1.100:8888", "StarLAN · 局域网星空");
-      renderUsers();
-      state.messages = [
-        { kind: "system", text: "已通过 UDP 广播自动发现局域网服务端 192.168.1.100:8888", ts: "21:14:02" },
-        { kind: "chat", sender: "Bob", text: "Wireshark 已经开始监听 8888 端口，三次握手和 4 字节长度头非常清晰。", ts: "21:14:18" },
-        { kind: "chat", sender: "Alice", text: "收到，我刚测试了连续粘包发送三条消息，服务端拆包全部正常。", ts: "21:14:35" },
-        { kind: "private", sender: "Node-03", to: "Alice", text: "点左侧节点名就可以直接发起私聊，试试看效果。", ts: "21:15:04" },
-      ];
+      // 独立预览演示数据
+      state.connected = true;
+      state.username = "林澈";
+      state.host = "192.168.1.100";
+      state.port = 8888;
+      renderMe();
+      syncUserSessions(["林澈", "陈默", "苏晚", "计网实验机-04"]);
+
+      appendMessage(LOBBY_ID, { kind: "system", text: "已通过 UDP 广播自动发现局域网服务端 192.168.1.100:8888", ts: "20:12:03" });
+      appendMessage(LOBBY_ID, { kind: "chat", sender: "陈默", text: "大家好，我在 Wireshark 里已经抓到 8888 端口的三次握手和 4 字节长度头了。", ts: "20:12:18" });
+      appendMessage(LOBBY_ID, { kind: "chat", sender: "林澈", text: "太好了！刚刚连续发送三条粘包测试消息，服务端拆包和广播顺序完全正确。", ts: "20:12:41" });
+      appendMessage(LOBBY_ID, { kind: "chat", sender: "苏晚", text: "界面很清爽，点击左侧联系人还能直接切到一对一私聊会话。", ts: "20:14:09" });
+
+      appendMessage("陈默", { kind: "private", sender: "陈默", to: "林澈", text: "等会儿答辩演示的时候，我这边开两台电脑一起连同一个热点测试。", ts: "20:13:20" });
+      appendMessage("陈默", { kind: "private", sender: "林澈", to: "陈默", text: "没问题，记得先放行 TCP 8888 和 UDP 9999 防火墙端口。", ts: "20:13:45" });
+      appendMessage("苏晚", { kind: "private", sender: "苏晚", to: "林澈", text: "实验报告里的协议帧结构图我整理好了，一会儿发群里。", ts: "20:11:12" });
+
+      // 清除演示初始化产生的未读数，仅保留 1 条自然提示
+      state.sessions[LOBBY_ID].unread = 0;
+      state.sessions["陈默"].unread = 0;
+      state.sessions["苏晚"].unread = 1;
+      renderSidebar();
+      renderHeader();
       renderMessages();
     })();
   </script>

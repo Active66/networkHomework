@@ -18,6 +18,7 @@ networkHomework/
 │   ├── protocol.py     # 应用层协议编解码（4字节长度前缀 + JSON）
 │   ├── discovery.py    # UDP 局域网广播发现服务端与客户端探测
 │   ├── server.py       # 多线程 TCP 服务端（登录/群聊/私聊/在线列表/心跳检测）
+│   ├── gui_client.py   # 桌面图形界面客户端（基于 Python 内置 tkinter）
 │   └── client.py       # 命令行交互式客户端
 └── tests/
     └── test_chat.py    # 端到端集成测试（含 UDP 发现、粘包拆包、私聊隔离等）
@@ -50,17 +51,23 @@ python3 -m chatroom.server --host 0.0.0.0 --port 8888
 
 启动后会打印本机局域网参考 IP 以及 TCP/UDP 监听端口。
 
-### 2. 启动客户端（可开多个终端或同局域网多台电脑）
+### 2. 启动客户端（推荐桌面图形界面，可同时多开几个窗口）
 
-**方式 A：UDP 局域网自动发现（推荐）**
+**方式 A：桌面图形界面客户端（推荐）**
 
 ```bash
-python3 -m chatroom.client --name Alice
+python3 -m chatroom.gui_client
 ```
 
-**方式 B：手动指定服务端 IP 和端口**
+在窗口顶部点击 **「UDP 自动发现」**（或手动填 IP），输入昵称后点击 **「连接」** 即可开始聊天；双击右侧在线用户列表可快速 `@私聊`。
+
+**方式 B：命令行客户端**
 
 ```bash
+# UDP 局域网自动发现
+python3 -m chatroom.client --name Alice
+
+# 或手动指定服务端 IP 和端口
 python3 -m chatroom.client --host 127.0.0.1 --port 8888 --name Bob
 ```
 

@@ -1,4 +1,4 @@
-"""局域网聊天室 TCP 服务端（多线程并发 + 心跳超时检测 + UDP 自动发现）。
+"""局域网聊天室 TCP 服务端（多线程并发 + SQLite 持久化 + 多房间路由 + ACK/已读回执 + UDP 自动发现）。
 
 运行方式：
     python3 -m chatroom.server --host 0.0.0.0 --port 8888
@@ -11,22 +11,32 @@ import logging
 import socket
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from chatroom.discovery import DISCOVERY_PORT, DiscoveryResponder
 from chatroom.protocol import (
+    DEFAULT_ROOM_ID,
     MAX_FILE_SIZE,
+    MSG_ACK,
     MSG_CHAT,
     MSG_ERROR,
     MSG_FILE_CHUNK,
     MSG_FILE_END,
     MSG_FILE_META,
     MSG_HEARTBEAT,
+    MSG_HISTORY_REQ,
+    MSG_HISTORY_RESP,
     MSG_LOGIN,
     MSG_LOGIN_ACK,
     MSG_LOGOUT,
     MSG_PRIVATE,
+    MSG_READ,
+    MSG_ROOM_CREATE,
+    MSG_ROOM_JOIN,
+    MSG_ROOM_LEAVE,
+    MSG_ROOM_LIST,
     MSG_SYSTEM,
     MSG_USER_LIST,
     ProtocolError,
@@ -34,6 +44,7 @@ from chatroom.protocol import (
     recv_packet,
     send_packet,
 )
+from chatroom.storage import ChatStorage, make_private_conv_id
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,11 +56,12 @@ logger = logging.getLogger("chatroom.server")
 
 @dataclass
 class ClientSession:
-    """维护单个在线客户端的连接状态与发送锁。"""
+    """维护单个在线客户端的连接状态、所在房间与发送锁。"""
 
     username: str
     sock: socket.socket
     addr: Tuple[str, int]
+    rooms: Set[str] = field(default_factory=lambda: {DEFAULT_ROOM_ID})
     last_seen: float = field(default_factory=time.monotonic)
     send_lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -83,13 +95,16 @@ class ChatServer:
         udp_discovery_port: Optional[int] = DISCOVERY_PORT,
         heartbeat_timeout: float = 30.0,
         server_name: str = "LAN-ChatRoom",
+        db_path: str = "chatroom_data.db",
     ) -> None:
         self.host = host
         self.port = port
         self.udp_discovery_port = udp_discovery_port
         self.heartbeat_timeout = heartbeat_timeout
         self.server_name = server_name
+        self.db_path = db_path
 
+        self._storage = ChatStorage(db_path=db_path)
         self._server_sock: Optional[socket.socket] = None
         self._discovery: Optional[DiscoveryResponder] = None
         self._stop_event = threading.Event()
@@ -128,10 +143,11 @@ class ChatServer:
 
         lan_ip = detect_lan_ip()
         logger.info(
-            "服务端已启动: TCP %s:%d (局域网参考 IP: %s)",
+            "服务端已启动: TCP %s:%d (局域网参考 IP: %s, SQLite: %s)",
             self.host,
             self.bound_tcp_port,
             lan_ip,
+            self.db_path,
         )
         if self.bound_udp_port is not None:
             logger.info("UDP 自动发现已开启: 端口 %d", self.bound_udp_port)
@@ -152,7 +168,7 @@ class ChatServer:
             self._accept_thread.start()
 
     def stop(self) -> None:
-        """优雅关闭服务端及所有客户端连接。"""
+        """优雅关闭服务端、所有客户端连接与数据库连接。"""
         if self._stop_event.is_set():
             return
         self._stop_event.set()
@@ -182,6 +198,7 @@ class ChatServer:
 
         if self._accept_thread is not None and self._accept_thread.is_alive():
             self._accept_thread.join(timeout=1.5)
+        self._storage.close()
         logger.info("服务端已关闭。")
 
     def _accept_loop(self) -> None:
@@ -227,6 +244,37 @@ class ChatServer:
         with self._clients_lock:
             return sorted(self._clients.keys())
 
+    def _build_room_list(self, username: str) -> List[Dict[str, Any]]:
+        rooms = self._storage.list_rooms()
+        with self._clients_lock:
+            sessions = list(self._clients.values())
+            me = self._clients.get(username)
+            my_rooms = set(me.rooms) if me else {DEFAULT_ROOM_ID}
+            counts: Dict[str, int] = {}
+            for s in sessions:
+                for rid in s.rooms:
+                    counts[rid] = counts.get(rid, 0) + 1
+
+        result: List[Dict[str, Any]] = []
+        for r in rooms:
+            rid = r["room_id"]
+            result.append(
+                {
+                    "room_id": rid,
+                    "name": r["name"],
+                    "creator": r["creator"],
+                    "member_count": counts.get(rid, 0),
+                    "joined": rid in my_rooms,
+                }
+            )
+        return result
+
+    def _broadcast_room_lists(self) -> None:
+        with self._clients_lock:
+            sessions = list(self._clients.values())
+        for s in sessions:
+            s.send(MSG_ROOM_LIST, rooms=self._build_room_list(s.username))
+
     def _broadcast(
         self,
         msg_type: str,
@@ -234,8 +282,22 @@ class ChatServer:
         **payload: object,
     ) -> None:
         with self._clients_lock:
+            targets = [s for name, s in self._clients.items() if name != exclude]
+        for session in targets:
+            session.send(msg_type, **payload)
+
+    def _broadcast_room(
+        self,
+        target_room_id: str,
+        msg_type: str,
+        exclude: Optional[str] = None,
+        **payload: object,
+    ) -> None:
+        with self._clients_lock:
             targets = [
-                s for name, s in self._clients.items() if name != exclude
+                s
+                for name, s in self._clients.items()
+                if name != exclude and target_room_id in s.rooms
             ]
         for session in targets:
             session.send(msg_type, **payload)
@@ -245,9 +307,10 @@ class ChatServer:
         sender_session: ClientSession,
         msg_type: str,
         target_name: Optional[str],
+        room_id: str = DEFAULT_ROOM_ID,
         **payload: object,
     ) -> bool:
-        """将文件元信息/分块/结束帧转发给群聊全体或指定私聊双方。"""
+        """将文件元信息/分块/结束帧转发给指定房间成员或私聊双方。"""
         if target_name:
             with self._clients_lock:
                 target = self._clients.get(target_name)
@@ -261,7 +324,14 @@ class ChatServer:
                 )
             return True
 
-        self._broadcast(msg_type, sender=sender_session.username, to=None, **payload)
+        self._broadcast_room(
+            room_id,
+            msg_type,
+            sender=sender_session.username,
+            to=None,
+            room_id=room_id,
+            **payload,
+        )
         return True
 
     def _handle_client(self, conn: socket.socket, addr: Tuple[str, int]) -> None:
@@ -293,20 +363,24 @@ class ChatServer:
                 online_users = sorted(self._clients.keys())
 
             conn.settimeout(None)
+            rooms_snapshot = self._build_room_list(username)
             session.send(
                 MSG_LOGIN_ACK,
                 ok=True,
                 username=username,
                 users=online_users,
+                rooms=rooms_snapshot,
             )
             logger.info("用户上线: %s (%s:%d)", username, addr[0], addr[1])
 
             self._broadcast(
                 MSG_SYSTEM,
+                room_id=DEFAULT_ROOM_ID,
                 text=f"{username} 加入了聊天室",
                 ts=current_timestamp(),
             )
             self._broadcast(MSG_USER_LIST, users=online_users)
+            self._broadcast_room_lists()
 
             # 2. 消息循环阶段
             while not self._stop_event.is_set():
@@ -318,15 +392,37 @@ class ChatServer:
 
                 if msg_type == MSG_CHAT:
                     text = str(pkt.get("text", "")).strip()
-                    if text:
-                        ts = current_timestamp()
-                        logger.info("[群聊] %s: %s", username, text)
-                        self._broadcast(
-                            MSG_CHAT,
-                            sender=username,
-                            text=text,
-                            ts=ts,
-                        )
+                    room_id = str(pkt.get("room_id") or DEFAULT_ROOM_ID).strip()
+                    if not text:
+                        continue
+                    if self._storage.get_room(room_id) is None:
+                        session.send(MSG_ERROR, text=f"房间 {room_id} 不存在")
+                        continue
+                    with self._clients_lock:
+                        session.rooms.add(room_id)
+
+                    msg_id = str(pkt.get("msg_id") or uuid.uuid4().hex)
+                    ts = current_timestamp()
+                    self._storage.save_message(
+                        msg_id=msg_id,
+                        conv_type="room",
+                        conv_id=room_id,
+                        sender=username,
+                        ts=ts,
+                        text=text,
+                    )
+                    logger.info("[房间:%s] %s: %s", room_id, username, text)
+                    session.send(MSG_ACK, msg_id=msg_id, status="delivered", room_id=room_id, ts=ts)
+                    self._broadcast_room(
+                        room_id,
+                        MSG_CHAT,
+                        msg_id=msg_id,
+                        room_id=room_id,
+                        sender=username,
+                        text=text,
+                        ts=ts,
+                    )
+
                 elif msg_type == MSG_PRIVATE:
                     target_name = str(pkt.get("to", "")).strip()
                     text = str(pkt.get("text", "")).strip()
@@ -338,9 +434,21 @@ class ChatServer:
                     if target is None:
                         session.send(MSG_ERROR, text=f"用户 {target_name} 不在线")
                         continue
+                    msg_id = str(pkt.get("msg_id") or uuid.uuid4().hex)
                     ts = current_timestamp()
+                    self._storage.save_message(
+                        msg_id=msg_id,
+                        conv_type="private",
+                        conv_id=make_private_conv_id(username, target_name),
+                        sender=username,
+                        target=target_name,
+                        ts=ts,
+                        text=text,
+                    )
+                    session.send(MSG_ACK, msg_id=msg_id, status="delivered", to=target_name, ts=ts)
                     target.send(
                         MSG_PRIVATE,
+                        msg_id=msg_id,
                         sender=username,
                         to=target_name,
                         text=text,
@@ -349,11 +457,118 @@ class ChatServer:
                     if target_name != username:
                         session.send(
                             MSG_PRIVATE,
+                            msg_id=msg_id,
                             sender=username,
                             to=target_name,
                             text=text,
                             ts=ts,
                         )
+
+                elif msg_type == MSG_READ:
+                    raw_ids = pkt.get("msg_ids")
+                    if isinstance(raw_ids, list):
+                        msg_ids = [str(mid).strip() for mid in raw_ids if str(mid).strip()]
+                    elif pkt.get("msg_id"):
+                        msg_ids = [str(pkt.get("msg_id")).strip()]
+                    else:
+                        msg_ids = []
+                    newly_read = self._storage.mark_read(msg_ids, username)
+                    ts = current_timestamp()
+                    for rec in newly_read:
+                        if rec["conv_type"] == "private":
+                            with self._clients_lock:
+                                orig_sender = self._clients.get(rec["sender"])
+                            if orig_sender is not None:
+                                orig_sender.send(
+                                    MSG_READ,
+                                    msg_id=rec["msg_id"],
+                                    reader=username,
+                                    to=username,
+                                    ts=ts,
+                                )
+                        else:
+                            self._broadcast_room(
+                                rec["conv_id"],
+                                MSG_READ,
+                                msg_id=rec["msg_id"],
+                                reader=username,
+                                room_id=rec["conv_id"],
+                                ts=ts,
+                            )
+
+                elif msg_type == MSG_HISTORY_REQ:
+                    limit = int(pkt.get("limit", 50))
+                    peer_raw = pkt.get("peer")
+                    room_raw = pkt.get("room_id")
+                    if peer_raw:
+                        peer = str(peer_raw).strip()
+                        history = self._storage.get_history(
+                            "private", make_private_conv_id(username, peer), limit=limit
+                        )
+                        session.send(MSG_HISTORY_RESP, peer=peer, room_id=None, messages=history)
+                    else:
+                        room_id = str(room_raw or DEFAULT_ROOM_ID).strip()
+                        history = self._storage.get_history("room", room_id, limit=limit)
+                        session.send(MSG_HISTORY_RESP, room_id=room_id, peer=None, messages=history)
+
+                elif msg_type == MSG_ROOM_CREATE:
+                    name = str(pkt.get("name", "")).strip()
+                    if not name or len(name) > 24:
+                        session.send(MSG_ERROR, text="房间名称须为 1~24 个字符")
+                        continue
+                    room_id = f"room_{uuid.uuid4().hex[:8]}"
+                    self._storage.create_room(room_id, name, username)
+                    with self._clients_lock:
+                        session.rooms.add(room_id)
+                    logger.info("创建房间: %s (%s) by %s", name, room_id, username)
+                    self._broadcast_room_lists()
+                    session.send(
+                        MSG_SYSTEM,
+                        room_id=room_id,
+                        text=f"{username} 创建了房间「{name}」",
+                        ts=current_timestamp(),
+                    )
+
+                elif msg_type == MSG_ROOM_JOIN:
+                    room_id = str(pkt.get("room_id", "")).strip()
+                    room = self._storage.get_room(room_id)
+                    if room is None:
+                        session.send(MSG_ERROR, text="目标房间不存在")
+                        continue
+                    with self._clients_lock:
+                        already_in = room_id in session.rooms
+                        session.rooms.add(room_id)
+                    self._broadcast_room_lists()
+                    if not already_in:
+                        self._broadcast_room(
+                            room_id,
+                            MSG_SYSTEM,
+                            room_id=room_id,
+                            text=f"{username} 加入了房间「{room['name']}」",
+                            ts=current_timestamp(),
+                        )
+
+                elif msg_type == MSG_ROOM_LEAVE:
+                    room_id = str(pkt.get("room_id", "")).strip()
+                    if room_id == DEFAULT_ROOM_ID:
+                        session.send(MSG_ERROR, text="不能退出公共大厅")
+                        continue
+                    with self._clients_lock:
+                        was_in = room_id in session.rooms
+                        session.rooms.discard(room_id)
+                    self._broadcast_room_lists()
+                    if was_in:
+                        self._broadcast_room(
+                            room_id,
+                            MSG_SYSTEM,
+                            room_id=room_id,
+                            text=f"{username} 离开了房间",
+                            ts=current_timestamp(),
+                        )
+
+                elif msg_type == MSG_ROOM_LIST:
+                    session.send(MSG_ROOM_LIST, rooms=self._build_room_list(username))
+
                 elif msg_type == MSG_FILE_META:
                     file_id = str(pkt.get("file_id", "")).strip()
                     filename = str(pkt.get("filename", "")).strip()
@@ -361,13 +576,14 @@ class ChatServer:
                     total_chunks = int(pkt.get("total_chunks", 0))
                     target_raw = pkt.get("to")
                     target_name = str(target_raw).strip() if target_raw else None
+                    room_id = str(pkt.get("room_id") or DEFAULT_ROOM_ID).strip()
                     if not file_id or not filename or size < 0 or size > MAX_FILE_SIZE or total_chunks < 1:
                         session.send(MSG_ERROR, text="文件元信息非法或超出 20 MB 大小限制")
                         continue
                     logger.info(
                         "[文件传输开始] %s -> %s: %s (%d bytes, %d chunks)",
                         username,
-                        target_name or "群聊",
+                        target_name or f"房间:{room_id}",
                         filename,
                         size,
                         total_chunks,
@@ -376,6 +592,7 @@ class ChatServer:
                         session,
                         MSG_FILE_META,
                         target_name,
+                        room_id=room_id,
                         file_id=file_id,
                         filename=filename,
                         size=size,
@@ -385,6 +602,7 @@ class ChatServer:
                         total_chunks=total_chunks,
                         ts=current_timestamp(),
                     )
+
                 elif msg_type == MSG_FILE_CHUNK:
                     file_id = str(pkt.get("file_id", "")).strip()
                     data = pkt.get("data")
@@ -392,21 +610,25 @@ class ChatServer:
                     total_chunks = int(pkt.get("total_chunks", 0))
                     target_raw = pkt.get("to")
                     target_name = str(target_raw).strip() if target_raw else None
+                    room_id = str(pkt.get("room_id") or DEFAULT_ROOM_ID).strip()
                     if not file_id or not isinstance(data, str) or seq < 0 or total_chunks < 1:
                         continue
                     self._route_file_packet(
                         session,
                         MSG_FILE_CHUNK,
                         target_name,
+                        room_id=room_id,
                         file_id=file_id,
                         seq=seq,
                         total_chunks=total_chunks,
                         data=data,
                     )
+
                 elif msg_type == MSG_FILE_END:
                     file_id = str(pkt.get("file_id", "")).strip()
                     target_raw = pkt.get("to")
                     target_name = str(target_raw).strip() if target_raw else None
+                    room_id = str(pkt.get("room_id") or DEFAULT_ROOM_ID).strip()
                     if not file_id:
                         continue
                     logger.info("[文件传输完成] %s (file_id=%s)", username, file_id[:8])
@@ -414,10 +636,12 @@ class ChatServer:
                         session,
                         MSG_FILE_END,
                         target_name,
+                        room_id=room_id,
                         file_id=file_id,
                         sha256=str(pkt.get("sha256", "")),
                         ts=current_timestamp(),
                     )
+
                 elif msg_type == MSG_USER_LIST:
                     session.send(MSG_USER_LIST, users=self._get_usernames())
                 elif msg_type == MSG_HEARTBEAT:
@@ -442,10 +666,12 @@ class ChatServer:
                     logger.info("用户下线: %s", session.username)
                     self._broadcast(
                         MSG_SYSTEM,
+                        room_id=DEFAULT_ROOM_ID,
                         text=f"{session.username} 离开了聊天室",
                         ts=current_timestamp(),
                     )
                     self._broadcast(MSG_USER_LIST, users=online_users)
+                    self._broadcast_room_lists()
             try:
                 conn.close()
             except OSError:
@@ -469,6 +695,7 @@ def parse_args() -> argparse.Namespace:
         help="心跳超时秒数 (默认 30.0)",
     )
     parser.add_argument("--name", default="LAN-ChatRoom", help="聊天室名称")
+    parser.add_argument("--db", default="chatroom_data.db", help="SQLite 数据库文件路径 (默认 chatroom_data.db)")
     return parser.parse_args()
 
 
@@ -481,6 +708,7 @@ def main() -> None:
         udp_discovery_port=udp_port,
         heartbeat_timeout=args.heartbeat_timeout,
         server_name=args.name,
+        db_path=args.db,
     )
     server.start(blocking=True)
 

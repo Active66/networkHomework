@@ -1,7 +1,10 @@
 """局域网聊天室现代简约 IM Web 界面客户端（零第三方依赖，底层走自定义 TCP/UDP 协议）。
 
 支持：
-- 群聊与点对点私聊
+- 多房间群聊与点对点私聊
+- SQLite 历史消息同步
+- 消息可靠送达回执（ACK）与已读状态（READ）
+- 断线指数退避自动重连（1s -> 2s -> 4s -> 8s）
 - UDP 局域网广播自动发现服务端
 - TCP 分块文件 / 图片传输（48 KB/帧）与 SHA-256 完整性校验
 
@@ -28,10 +31,11 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from chatroom.discovery import DISCOVERY_PORT, discover_server
 from chatroom.protocol import (
+    DEFAULT_ROOM_ID,
     FILE_CHUNK_SIZE,
     MAX_FILE_SIZE,
     MSG_CHAT,
@@ -39,10 +43,17 @@ from chatroom.protocol import (
     MSG_FILE_END,
     MSG_FILE_META,
     MSG_HEARTBEAT,
+    MSG_HISTORY_REQ,
+    MSG_HISTORY_RESP,
     MSG_LOGIN,
     MSG_LOGIN_ACK,
     MSG_LOGOUT,
     MSG_PRIVATE,
+    MSG_READ,
+    MSG_ROOM_CREATE,
+    MSG_ROOM_JOIN,
+    MSG_ROOM_LEAVE,
+    MSG_ROOM_LIST,
     MSG_USER_LIST,
     ProtocolError,
     recv_packet,
@@ -61,13 +72,26 @@ def sanitize_filename(name: str) -> str:
 class WebChatBridge:
     """将浏览器 HTTP/SSE 请求桥接到原生 TCP 局域网聊天室服务端。"""
 
-    def __init__(self, udp_port: int = DISCOVERY_PORT) -> None:
+    def __init__(
+        self,
+        udp_port: int = DISCOVERY_PORT,
+        reconnect_base_delay: float = 1.0,
+    ) -> None:
         self.udp_port = udp_port
+        self.reconnect_base_delay = reconnect_base_delay
+
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
         self._sock: Optional[socket.socket] = None
         self._stop_event = threading.Event()
+        self._closed = False
         self._subscribers: List[queue.Queue[Dict[str, Any]]] = []
+
+        self._auto_reconnect = False
+        self._reconnecting = False
+        self._reconnect_cancel = threading.Event()
+        self._last_conn: Optional[Tuple[str, int, str]] = None
+        self._joined_rooms: Set[str] = {DEFAULT_ROOM_ID}
 
         self._temp_dir = tempfile.TemporaryDirectory(prefix="lanchat_files_")
         self._incoming_files: Dict[str, Dict[str, Any]] = {}
@@ -78,9 +102,11 @@ class WebChatBridge:
         self.port: int = 8888
         self.username: str = ""
         self.users: List[str] = []
+        self.rooms: List[Dict[str, Any]] = []
 
     def close(self) -> None:
-        self.disconnect(send_logout=True)
+        self._closed = True
+        self.disconnect(send_logout=True, manual=True)
         self._temp_dir.cleanup()
 
     def subscribe(self) -> queue.Queue[Dict[str, Any]]:
@@ -107,9 +133,7 @@ class WebChatBridge:
         ip, tcp_port, server_name = found
         return {"ok": True, "host": ip, "port": tcp_port, "server_name": server_name}
 
-    def connect(self, host: str, port: int, username: str) -> Dict[str, Any]:
-        self.disconnect(send_logout=True)
-
+    def _connect_socket(self, host: str, port: int, username: str) -> Dict[str, Any]:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(8.0)
         try:
@@ -134,6 +158,8 @@ class WebChatBridge:
             self.port = port
             self.username = username
             self.users = list(ack.get("users", []))
+            self.rooms = list(ack.get("rooms", []))
+            self._last_conn = (host, port, username)
 
         threading.Thread(target=self._recv_loop, args=(sock,), daemon=True).start()
         threading.Thread(target=self._heartbeat_loop, args=(sock,), daemon=True).start()
@@ -141,12 +167,26 @@ class WebChatBridge:
             "ok": True,
             "username": self.username,
             "users": self.users,
+            "rooms": self.rooms,
             "host": host,
             "port": port,
         }
 
-    def disconnect(self, send_logout: bool = False) -> None:
+    def connect(self, host: str, port: int, username: str) -> Dict[str, Any]:
+        self.disconnect(send_logout=True, manual=True)
+        res = self._connect_socket(host, port, username)
+        if res.get("ok"):
+            with self._lock:
+                self._auto_reconnect = True
+                self._reconnect_cancel.clear()
+                self._joined_rooms = {DEFAULT_ROOM_ID}
+        return res
+
+    def disconnect(self, send_logout: bool = False, manual: bool = True) -> None:
         with self._lock:
+            if manual:
+                self._auto_reconnect = False
+                self._reconnect_cancel.set()
             sock = self._sock
             was_connected = self.connected
             self._sock = None
@@ -170,7 +210,61 @@ class WebChatBridge:
             except OSError:
                 pass
 
-    def send_message(self, text: str, to: Optional[str] = None) -> Dict[str, Any]:
+    def _trigger_auto_reconnect(self) -> None:
+        with self._lock:
+            if self._closed or not self._auto_reconnect or self._reconnecting or self._last_conn is None:
+                return
+            self._reconnecting = True
+            self._reconnect_cancel.clear()
+            target = self._last_conn
+
+        def _worker() -> None:
+            host, port, username = target
+            attempt = 0
+            try:
+                while not self._closed and self._auto_reconnect and not self._reconnect_cancel.is_set():
+                    delay = min(10.0, self.reconnect_base_delay * (2 ** min(attempt, 4)))
+                    attempt += 1
+                    self._publish(
+                        {
+                            "type": "RECONNECTING",
+                            "attempt": attempt,
+                            "delay": round(delay, 2),
+                            "text": f"网络已断开，{delay:.1f}s 后进行第 {attempt} 次自动重连...",
+                        }
+                    )
+                    if self._reconnect_cancel.wait(delay):
+                        break
+                    if self._closed or not self._auto_reconnect:
+                        break
+
+                    res = self._connect_socket(host, port, username)
+                    if res.get("ok"):
+                        with self._lock:
+                            rooms_to_rejoin = [
+                                rid for rid in self._joined_rooms if rid != DEFAULT_ROOM_ID
+                            ]
+                        for rid in rooms_to_rejoin:
+                            self.join_room(rid)
+                        self._publish(
+                            {
+                                "type": "RECONNECTED",
+                                "username": self.username,
+                                "users": self.users,
+                                "rooms": self.rooms,
+                                "host": host,
+                                "port": port,
+                                "text": "已自动重新连接到局域网服务端",
+                            }
+                        )
+                        return
+            finally:
+                with self._lock:
+                    self._reconnecting = False
+
+        threading.Thread(target=_worker, name="tcp-auto-reconnect", daemon=True).start()
+
+    def _send_raw(self, msg_type: str, **payload: object) -> Dict[str, Any]:
         with self._lock:
             sock = self._sock
             connected = self.connected
@@ -178,13 +272,57 @@ class WebChatBridge:
             return {"ok": False, "error": "尚未连接到服务端"}
         try:
             with self._send_lock:
-                if to:
-                    send_packet(sock, MSG_PRIVATE, to=to, text=text)
-                else:
-                    send_packet(sock, MSG_CHAT, text=text)
+                send_packet(sock, msg_type, **payload)
             return {"ok": True}
         except OSError as exc:
             return {"ok": False, "error": str(exc)}
+
+    def send_message(
+        self,
+        text: str,
+        to: Optional[str] = None,
+        room_id: str = DEFAULT_ROOM_ID,
+        msg_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        actual_id = msg_id or uuid.uuid4().hex
+        if to:
+            res = self._send_raw(MSG_PRIVATE, to=to, text=text, msg_id=actual_id)
+        else:
+            res = self._send_raw(MSG_CHAT, room_id=room_id, text=text, msg_id=actual_id)
+        if res.get("ok"):
+            res["msg_id"] = actual_id
+        return res
+
+    def mark_read(self, msg_ids: List[str]) -> Dict[str, Any]:
+        cleaned = [m for m in msg_ids if m]
+        if not cleaned:
+            return {"ok": True}
+        return self._send_raw(MSG_READ, msg_ids=cleaned)
+
+    def request_history(
+        self,
+        room_id: Optional[str] = None,
+        peer: Optional[str] = None,
+        limit: int = 50,
+    ) -> Dict[str, Any]:
+        return self._send_raw(MSG_HISTORY_REQ, room_id=room_id, peer=peer, limit=limit)
+
+    def create_room(self, name: str) -> Dict[str, Any]:
+        return self._send_raw(MSG_ROOM_CREATE, name=name)
+
+    def join_room(self, room_id: str) -> Dict[str, Any]:
+        res = self._send_raw(MSG_ROOM_JOIN, room_id=room_id)
+        if res.get("ok"):
+            with self._lock:
+                self._joined_rooms.add(room_id)
+        return res
+
+    def leave_room(self, room_id: str) -> Dict[str, Any]:
+        res = self._send_raw(MSG_ROOM_LEAVE, room_id=room_id)
+        if res.get("ok"):
+            with self._lock:
+                self._joined_rooms.discard(room_id)
+        return res
 
     def send_file(
         self,
@@ -193,6 +331,7 @@ class WebChatBridge:
         mime_type: Optional[str] = None,
         is_image: Optional[bool] = None,
         to: Optional[str] = None,
+        room_id: str = DEFAULT_ROOM_ID,
     ) -> Dict[str, Any]:
         """按 48 KB/块通过自定义 TCP 协议分块发送文件或图片，并附带 SHA-256 校验值。"""
         with self._lock:
@@ -233,6 +372,7 @@ class WebChatBridge:
                         sha256=sha256_hex,
                         total_chunks=total_chunks,
                         to=to,
+                        room_id=room_id,
                     )
 
                 for seq in range(total_chunks):
@@ -248,6 +388,7 @@ class WebChatBridge:
                             total_chunks=total_chunks,
                             data=b64,
                             to=to,
+                            room_id=room_id,
                         )
 
                 with self._send_lock:
@@ -257,6 +398,7 @@ class WebChatBridge:
                         file_id=file_id,
                         sha256=sha256_hex,
                         to=to,
+                        room_id=room_id,
                     )
             except OSError as exc:
                 self._publish({"type": "ERROR", "text": f"文件 {clean_name} 发送失败: {exc}"})
@@ -296,6 +438,7 @@ class WebChatBridge:
                 "total_chunks": max(1, int(pkt.get("total_chunks", 1))),
                 "sender": str(pkt.get("sender", "")),
                 "to": pkt.get("to"),
+                "room_id": pkt.get("room_id") or DEFAULT_ROOM_ID,
                 "ts": pkt.get("ts", ""),
                 "chunks": {},
             }
@@ -312,6 +455,7 @@ class WebChatBridge:
                     "total_chunks": meta["total_chunks"],
                     "sender": meta["sender"],
                     "to": meta["to"],
+                    "room_id": meta["room_id"],
                     "ts": meta["ts"],
                 }
             )
@@ -332,6 +476,7 @@ class WebChatBridge:
                 total = entry["total_chunks"]
                 sender = entry["sender"]
                 to = entry["to"]
+                room_id = entry["room_id"]
 
             percent = min(100, int(received * 100 / total))
             self._publish(
@@ -343,6 +488,7 @@ class WebChatBridge:
                     "percent": percent,
                     "sender": sender,
                     "to": to,
+                    "room_id": room_id,
                 }
             )
             return
@@ -400,6 +546,7 @@ class WebChatBridge:
                     "url": f"/api/files/{file_id}",
                     "sender": entry["sender"],
                     "to": entry["to"],
+                    "room_id": entry["room_id"],
                     "ts": pkt.get("ts") or entry["ts"],
                 }
             )
@@ -410,20 +557,42 @@ class WebChatBridge:
                 pkt = recv_packet(sock)
             except (ConnectionError, OSError, ProtocolError):
                 if not self._stop_event.is_set():
-                    self.disconnect(send_logout=False)
-                    self._publish({"type": "DISCONNECTED", "text": "与服务端的连接已断开"})
+                    self.disconnect(send_logout=False, manual=False)
+                    self._publish(
+                        {
+                            "type": "DISCONNECTED",
+                            "reconnecting": self._auto_reconnect,
+                            "text": "与服务端的连接意外断开",
+                        }
+                    )
+                    self._trigger_auto_reconnect()
                 break
 
             if pkt is None:
                 if not self._stop_event.is_set():
-                    self.disconnect(send_logout=False)
-                    self._publish({"type": "DISCONNECTED", "text": "服务端已关闭连接"})
+                    self.disconnect(send_logout=False, manual=False)
+                    self._publish(
+                        {
+                            "type": "DISCONNECTED",
+                            "reconnecting": self._auto_reconnect,
+                            "text": "服务端已关闭连接",
+                        }
+                    )
+                    self._trigger_auto_reconnect()
                 break
 
             msg_type = pkt.get("type")
             if msg_type == MSG_USER_LIST:
                 with self._lock:
                     self.users = list(pkt.get("users", []))
+                self._publish(pkt)
+            elif msg_type == MSG_ROOM_LIST:
+                rooms = list(pkt.get("rooms", []))
+                with self._lock:
+                    self.rooms = rooms
+                    self._joined_rooms = {
+                        r["room_id"] for r in rooms if r.get("joined")
+                    } or {DEFAULT_ROOM_ID}
                 self._publish(pkt)
             elif msg_type in (MSG_FILE_META, MSG_FILE_CHUNK, MSG_FILE_END):
                 self._handle_file_packet(pkt)
@@ -481,6 +650,7 @@ def create_handler(bridge: WebChatBridge):
                         "port": bridge.port,
                         "username": bridge.username,
                         "users": bridge.users,
+                        "rooms": bridge.rooms,
                     }
                 )
                 return
@@ -559,7 +729,52 @@ def create_handler(bridge: WebChatBridge):
                 text = str(payload.get("text", "")).strip()
                 to = payload.get("to")
                 to_str = str(to).strip() if to else None
-                res = bridge.send_message(text=text, to=to_str)
+                room_id = str(payload.get("room_id") or DEFAULT_ROOM_ID).strip()
+                msg_id = payload.get("msg_id")
+                res = bridge.send_message(
+                    text=text,
+                    to=to_str,
+                    room_id=room_id,
+                    msg_id=str(msg_id).strip() if msg_id else None,
+                )
+                self._send_json(res)
+                return
+
+            if path == "/api/read":
+                payload = self._read_json()
+                msg_ids = payload.get("msg_ids") or []
+                res = bridge.mark_read([str(m) for m in msg_ids])
+                self._send_json(res)
+                return
+
+            if path == "/api/history":
+                payload = self._read_json()
+                room_id = payload.get("room_id")
+                peer = payload.get("peer")
+                limit = int(payload.get("limit", 50))
+                res = bridge.request_history(
+                    room_id=str(room_id).strip() if room_id else None,
+                    peer=str(peer).strip() if peer else None,
+                    limit=limit,
+                )
+                self._send_json(res)
+                return
+
+            if path == "/api/rooms/create":
+                payload = self._read_json()
+                res = bridge.create_room(str(payload.get("name", "")).strip())
+                self._send_json(res)
+                return
+
+            if path == "/api/rooms/join":
+                payload = self._read_json()
+                res = bridge.join_room(str(payload.get("room_id", "")).strip())
+                self._send_json(res)
+                return
+
+            if path == "/api/rooms/leave":
+                payload = self._read_json()
+                res = bridge.leave_room(str(payload.get("room_id", "")).strip())
                 self._send_json(res)
                 return
 
@@ -584,6 +799,9 @@ def create_handler(bridge: WebChatBridge):
                 is_image = True if is_image_hdr == "true" else (False if is_image_hdr == "false" else None)
                 to_hdr = urllib.parse.unquote(self.headers.get("X-To", "")).strip()
                 to_target = to_hdr or None
+                room_id = urllib.parse.unquote(
+                    self.headers.get("X-Room-Id", DEFAULT_ROOM_ID)
+                ).strip() or DEFAULT_ROOM_ID
 
                 res = bridge.send_file(
                     filename=filename,
@@ -591,12 +809,13 @@ def create_handler(bridge: WebChatBridge):
                     mime_type=mime_type,
                     is_image=is_image,
                     to=to_target,
+                    room_id=room_id,
                 )
                 self._send_json(res)
                 return
 
             if path == "/api/disconnect":
-                bridge.disconnect(send_logout=True)
+                bridge.disconnect(send_logout=True, manual=True)
                 self._send_json({"ok": True})
                 return
 

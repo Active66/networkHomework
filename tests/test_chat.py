@@ -66,6 +66,7 @@ class ChatRoomIntegrationTest(unittest.TestCase):
             udp_discovery_port=0,
             heartbeat_timeout=15.0,
             server_name="Test-ChatRoom",
+            db_path=":memory:",
         )
         self.server.start(blocking=False)
         self.sockets: List[socket.socket] = []
@@ -275,6 +276,160 @@ class ChatRoomIntegrationTest(unittest.TestCase):
             alice.close()
             bob.close()
             charlie.close()
+
+    def test_multi_room_isolation(self) -> None:
+        """验证自定义多房间创建、加入与消息隔离（未加入者不会收到房间消息）。"""
+        from chatroom.protocol import MSG_ROOM_CREATE, MSG_ROOM_JOIN, MSG_ROOM_LIST
+
+        alice, _ = self._login("Alice")
+        bob, _ = self._login("Bob")
+        charlie, _ = self._login("Charlie")
+
+        send_packet(alice, MSG_ROOM_CREATE, name="计网实验组")
+        room_list_pkt = recv_until(
+            bob,
+            lambda p: p.get("type") == MSG_ROOM_LIST
+            and any(r["name"] == "计网实验组" for r in p.get("rooms", [])),
+        )
+        custom_room = next(r for r in room_list_pkt["rooms"] if r["name"] == "计网实验组")
+        room_id = custom_room["room_id"]
+
+        # Bob 加入房间，Charlie 不加入
+        send_packet(bob, MSG_ROOM_JOIN, room_id=room_id)
+        recv_until(
+            bob,
+            lambda p: p.get("type") == MSG_ROOM_LIST
+            and any(r["room_id"] == room_id and r["joined"] for r in p.get("rooms", [])),
+        )
+
+        send_packet(alice, MSG_CHAT, room_id=room_id, text="实验组内部消息")
+        bob_msg = recv_until(
+            bob,
+            lambda p: p.get("type") == MSG_CHAT and p.get("text") == "实验组内部消息",
+        )
+        self.assertEqual(bob_msg["room_id"], room_id)
+
+        # 用心跳哨兵确认 Charlie 未收到实验组消息
+        send_packet(charlie, MSG_HEARTBEAT)
+        hb = recv_until(charlie, lambda p: p.get("type") == MSG_HEARTBEAT)
+        self.assertEqual(hb["type"], MSG_HEARTBEAT)
+
+    def test_ack_and_read_receipts(self) -> None:
+        """验证消息送达回执（MSG_ACK）与已读回执（MSG_READ）。"""
+        from chatroom.protocol import MSG_ACK, MSG_READ
+
+        alice, _ = self._login("Alice")
+        bob, _ = self._login("Bob")
+
+        send_packet(alice, MSG_PRIVATE, to="Bob", text="请查收", msg_id="msg-ack-001")
+        ack = recv_until(
+            alice,
+            lambda p: p.get("type") == MSG_ACK and p.get("msg_id") == "msg-ack-001",
+        )
+        self.assertEqual(ack["status"], "delivered")
+
+        bob_pkt = recv_until(
+            bob,
+            lambda p: p.get("type") == MSG_PRIVATE and p.get("msg_id") == "msg-ack-001",
+        )
+        send_packet(bob, MSG_READ, msg_ids=[bob_pkt["msg_id"]])
+
+        read_pkt = recv_until(
+            alice,
+            lambda p: p.get("type") == MSG_READ and p.get("msg_id") == "msg-ack-001",
+        )
+        self.assertEqual(read_pkt["reader"], "Bob")
+
+    def test_sqlite_persistence_and_history_sync(self) -> None:
+        """验证 SQLite 持久化在服务端重启后仍能同步历史消息与已读记录。"""
+        import tempfile
+        from pathlib import Path
+        from chatroom.protocol import DEFAULT_ROOM_ID, MSG_HISTORY_REQ, MSG_HISTORY_RESP, MSG_READ
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_file = str(Path(tmpdir) / "persist.db")
+
+            # 第一次启动服务端并发送消息
+            srv1 = ChatServer(host="127.0.0.1", port=0, udp_discovery_port=None, db_path=db_file)
+            srv1.start(blocking=False)
+            try:
+                s_alice, _ = connect_and_login(srv1.bound_tcp_port, "Alice")
+                s_bob, _ = connect_and_login(srv1.bound_tcp_port, "Bob")
+                try:
+                    send_packet(s_alice, MSG_CHAT, room_id=DEFAULT_ROOM_ID, text="持久化测试消息", msg_id="persist-1")
+                    recv_until(s_bob, lambda p: p.get("type") == MSG_CHAT and p.get("msg_id") == "persist-1")
+                    send_packet(s_bob, MSG_READ, msg_ids=["persist-1"])
+                    recv_until(s_alice, lambda p: p.get("type") == MSG_READ and p.get("msg_id") == "persist-1")
+                finally:
+                    s_alice.close()
+                    s_bob.close()
+            finally:
+                srv1.stop()
+
+            # 重启新服务端实例，验证历史消息和已读回执完整保留
+            srv2 = ChatServer(host="127.0.0.1", port=0, udp_discovery_port=None, db_path=db_file)
+            srv2.start(blocking=False)
+            try:
+                s_alice2, _ = connect_and_login(srv2.bound_tcp_port, "Alice")
+                try:
+                    send_packet(s_alice2, MSG_HISTORY_REQ, room_id=DEFAULT_ROOM_ID, limit=20)
+                    hist = recv_until(s_alice2, lambda p: p.get("type") == MSG_HISTORY_RESP)
+                    msgs = hist["messages"]
+                    self.assertEqual(len(msgs), 1)
+                    self.assertEqual(msgs[0]["msg_id"], "persist-1")
+                    self.assertEqual(msgs[0]["text"], "持久化测试消息")
+                    self.assertIn("Bob", msgs[0]["read_by"])
+                finally:
+                    s_alice2.close()
+            finally:
+                srv2.stop()
+
+    def test_auto_reconnect_after_server_restart(self) -> None:
+        """验证服务端中断重启后，WebChatBridge 自动重连并恢复在线状态。"""
+        from chatroom.web_client import WebChatBridge
+
+        srv1 = ChatServer(host="127.0.0.1", port=0, udp_discovery_port=None, db_path=":memory:")
+        srv1.start(blocking=False)
+        tcp_port = srv1.bound_tcp_port
+
+        bridge = WebChatBridge(udp_port=0, reconnect_base_delay=0.15)
+        sub = bridge.subscribe()
+        srv2 = None
+        try:
+            res = bridge.connect("127.0.0.1", tcp_port, "ReconnectUser")
+            self.assertTrue(res["ok"])
+
+            # 模拟服务端意外关闭
+            srv1.stop()
+
+            # 等待进入自动重连状态
+            deadline = time.monotonic() + 3.0
+            saw_reconnecting = False
+            while time.monotonic() < deadline:
+                ev = sub.get(timeout=max(0.1, deadline - time.monotonic()))
+                if ev.get("type") == "RECONNECTING":
+                    saw_reconnecting = True
+                    break
+            self.assertTrue(saw_reconnecting)
+
+            # 在同一端口重新拉起服务端，验证客户端自动重连成功
+            srv2 = ChatServer(host="127.0.0.1", port=tcp_port, udp_discovery_port=None, db_path=":memory:")
+            srv2.start(blocking=False)
+
+            deadline = time.monotonic() + 5.0
+            saw_reconnected = False
+            while time.monotonic() < deadline:
+                ev = sub.get(timeout=max(0.1, deadline - time.monotonic()))
+                if ev.get("type") == "RECONNECTED":
+                    saw_reconnected = True
+                    break
+            self.assertTrue(saw_reconnected)
+            self.assertTrue(bridge.connected)
+        finally:
+            bridge.unsubscribe(sub)
+            bridge.close()
+            if srv2 is not None:
+                srv2.stop()
 
 
 if __name__ == "__main__":

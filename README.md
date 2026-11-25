@@ -26,6 +26,8 @@ networkHomework/
 │   ├── web/index.html  # 浅蓝渐变左右分栏 IM 前端界面（无冗余假图标，全真实功能）
 │   ├── gui_client.py   # 桌面图形界面客户端（基于 Python 内置 tkinter）
 │   └── client.py       # 命令行交互式客户端
+├── docs/
+│   └── 计算机网络课程设计实验报告_局域网聊天室.docx  # 15 页完整课程设计实验报告（含小组成员信息预留空）
 └── tests/
     └── test_chat.py    # 11 项端到端集成测试（UDP 发现、粘包、多房间、SQLite、ACK/已读、重连、分块文件）
 ```

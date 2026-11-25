@@ -685,11 +685,13 @@
     }
     .modal-title { font-size: 16px; font-weight: 600; color: var(--text-main); }
     .modal-sub { font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
-    .form-row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+    .form-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px; }
     .form-inline { display: flex; gap: 8px; }
-    .form-field { display: flex; flex-direction: column; gap: 5px; }
+    .form-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
     .form-field label { font-size: 12px; color: var(--text-secondary); }
     .form-field input, .form-inline input {
+      width: 100%;
+      min-width: 0;
       height: 38px;
       padding: 0 12px;
       border-radius: 10px;
@@ -698,6 +700,8 @@
       font-size: 13.5px;
       color: var(--text-main);
       outline: none;
+    }
+    .form-inline input {
       flex: 1;
     }
     .form-field input:focus, .form-inline input:focus {

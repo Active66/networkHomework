@@ -237,9 +237,18 @@ class ChatRoomGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.font = pick_font_family()
+        try:
+            self._dpi_scale = max(1.0, min(2.2, self.root.winfo_fpixels("1i") / 96.0))
+        except Exception:
+            self._dpi_scale = 1.0
+
         self.root.title("局域网聊天室 · 现代简约桌面端")
-        self.root.geometry("1040x680")
-        self.root.minsize(820, 540)
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        init_w = min(int(1040 * self._dpi_scale), int(sw * 0.88))
+        init_h = min(int(680 * self._dpi_scale), int(sh * 0.84))
+        self.root.geometry(f"{init_w}x{init_h}")
+        self.root.minsize(min(int(820 * self._dpi_scale), init_w), min(int(540 * self._dpi_scale), init_h))
         self.root.configure(bg=C_CHAT_BG)
 
         # 网络与状态
@@ -291,7 +300,7 @@ class ChatRoomGUI:
         container.pack(fill=tk.BOTH, expand=True)
 
         # ---------- 左侧纯白会话栏 ----------
-        self.sidebar = tk.Frame(container, bg=C_SIDEBAR, width=282)
+        self.sidebar = tk.Frame(container, bg=C_SIDEBAR, width=int(282 * self._dpi_scale))
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
         self.sidebar.pack_propagate(False)
 
@@ -1027,11 +1036,30 @@ class ChatRoomGUI:
 
     # ===================== 弹窗交互 =====================
 
+    def _fit_and_center_modal(self, win: tk.Toplevel, min_w: int = 440, min_h: int = 320) -> None:
+        """按当前 DPI 自动测算弹窗所需尺寸并居中，防止高分屏下底部按钮被裁切。"""
+        win.update_idletasks()
+        req_w = max(win.winfo_reqwidth() + 28, int(min_w * self._dpi_scale))
+        req_h = max(win.winfo_reqheight() + 24, int(min_h * self._dpi_scale))
+        sw = win.winfo_screenwidth()
+        sh = win.winfo_screenheight()
+        w = min(req_w, int(sw * 0.9))
+        h = min(req_h, int(sh * 0.9))
+
+        self.root.update_idletasks()
+        rx = self.root.winfo_rootx()
+        ry = self.root.winfo_rooty()
+        rw = self.root.winfo_width()
+        rh = self.root.winfo_height()
+        x = max(20, min(rx + (rw - w) // 2, sw - w - 20))
+        y = max(20, min(ry + (rh - h) // 2, sh - h - 40))
+
+        win.minsize(w, h)
+        win.geometry(f"{w}x{h}+{x}+{y}")
+
     def _open_connect_modal(self) -> None:
         win = tk.Toplevel(self.root)
         win.title("连接局域网聊天室")
-        win.geometry("410x330")
-        win.resizable(False, False)
         win.configure(bg="#FFFFFF")
         win.transient(self.root)
         win.grab_set()
@@ -1046,7 +1074,9 @@ class ChatRoomGUI:
             bg="#FFFFFF",
             fg=C_MUTED,
             font=(self.font, 9),
-        ).pack(anchor="w", pady=(2, 14))
+            justify=tk.LEFT,
+            wraplength=int(390 * self._dpi_scale),
+        ).pack(anchor="w", pady=(4, 14))
 
         row1 = tk.Frame(body, bg="#FFFFFF")
         row1.pack(fill=tk.X, pady=(0, 10))
@@ -1073,11 +1103,14 @@ class ChatRoomGUI:
                           highlightthickness=1, highlightbackground=C_BORDER, highlightcolor=C_PRIMARY)
         name_e.pack(fill=tk.X, ipady=6, pady=(4, 10))
 
-        status_lbl = tk.Label(body, text="", bg="#FFFFFF", fg=C_PRIMARY, font=(self.font, 9), anchor="w")
-        status_lbl.pack(fill=tk.X, pady=(0, 10))
+        status_lbl = tk.Label(
+            body, text="", bg="#FFFFFF", fg=C_PRIMARY, font=(self.font, 9),
+            anchor="w", justify=tk.LEFT, wraplength=int(390 * self._dpi_scale),
+        )
+        status_lbl.pack(fill=tk.X, pady=(0, 12))
 
         btn_row = tk.Frame(body, bg="#FFFFFF")
-        btn_row.pack(fill=tk.X)
+        btn_row.pack(fill=tk.X, pady=(4, 0))
 
         def do_discover() -> None:
             status_lbl.configure(text="正在广播 UDP 探测包寻找服务端...")
@@ -1099,7 +1132,7 @@ class ChatRoomGUI:
 
             threading.Thread(target=_w, daemon=True).start()
 
-        def do_connect() -> None:
+        def do_connect(_event: Optional[tk.Event] = None) -> None:
             h = host_var.get().strip()
             p_str = port_var.get().strip()
             u = name_var.get().strip()
@@ -1138,7 +1171,7 @@ class ChatRoomGUI:
         ).pack(side=tk.LEFT)
 
         FlatButton(
-            btn_row, text="连 接", command=do_connect,
+            btn_row, text="确定连接", command=do_connect,
             bg=C_PRIMARY, fg="#FFFFFF", hover_bg=C_PRIMARY_HOVER, font=(self.font, 9, "bold"),
             padx=18, pady=6,
         ).pack(side=tk.RIGHT)
@@ -1149,6 +1182,10 @@ class ChatRoomGUI:
             padx=12, pady=6, border_color=C_BORDER,
         ).pack(side=tk.RIGHT, padx=(0, 8))
 
+        win.bind("<Return>", do_connect)
+        self._fit_and_center_modal(win, min_w=440, min_h=300)
+        name_e.focus_set()
+
     def _open_room_modal(self) -> None:
         if not self._connected:
             self._open_connect_modal()
@@ -1156,8 +1193,6 @@ class ChatRoomGUI:
 
         win = tk.Toplevel(self.root)
         win.title("房间与群组管理")
-        win.geometry("410x360")
-        win.resizable(False, False)
         win.configure(bg="#FFFFFF")
         win.transient(self.root)
         win.grab_set()
@@ -1166,7 +1201,10 @@ class ChatRoomGUI:
         body.pack(fill=tk.BOTH, expand=True)
 
         tk.Label(body, text="房间与群组管理", bg="#FFFFFF", fg=C_TEXT, font=(self.font, 13, "bold")).pack(anchor="w")
-        tk.Label(body, text="创建新房间，或加入局域网内已存在的群聊房间。", bg="#FFFFFF", fg=C_MUTED, font=(self.font, 9)).pack(anchor="w", pady=(2, 12))
+        tk.Label(
+            body, text="创建新房间，或加入局域网内已存在的群聊房间。", bg="#FFFFFF", fg=C_MUTED,
+            font=(self.font, 9), justify=tk.LEFT, wraplength=int(390 * self._dpi_scale),
+        ).pack(anchor="w", pady=(4, 12))
 
         create_row = tk.Frame(body, bg="#FFFFFF")
         create_row.pack(fill=tk.X, pady=(0, 12))
@@ -1177,7 +1215,7 @@ class ChatRoomGUI:
         )
         ent.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=6)
 
-        def do_create() -> None:
+        def do_create(_event: Optional[tk.Event] = None) -> None:
             rname = name_var.get().strip()
             if not rname:
                 return
@@ -1232,6 +1270,10 @@ class ChatRoomGUI:
                     bg=C_PRIMARY, fg="#FFFFFF", hover_bg=C_PRIMARY_HOVER, font=(self.font, 9, "bold"),
                     padx=10, pady=3,
                 ).pack(side=tk.RIGHT)
+
+        win.bind("<Return>", do_create)
+        self._fit_and_center_modal(win, min_w=440, min_h=340)
+        ent.focus_set()
 
     def _open_emoji_picker(self) -> None:
         pop = tk.Toplevel(self.root)

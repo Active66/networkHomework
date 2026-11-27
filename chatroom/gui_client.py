@@ -282,6 +282,14 @@ class ChatRoomGUI:
         self._incoming_files: Dict[str, Dict[str, Any]] = {}
         self._completed_files: Dict[str, Dict[str, Any]] = {}
 
+        # 增量更新与批量重绘标记（防止历史同步/批量已读引发 O(N^2) 重绘卡死）
+        self._dirty_sidebar: bool = False
+        self._dirty_header: bool = False
+        self._dirty_messages: bool = False
+        self._dirty_read: bool = False
+        self._status_labels: Dict[str, tk.Label] = {}
+        self._file_progress_labels: Dict[str, tk.Label] = {}
+
         self._ensure_room_session(DEFAULT_ROOM_ID, DEFAULT_ROOM_NAME)
         self._build_ui()
         self._render_sidebar()
@@ -659,7 +667,30 @@ class ChatRoomGUI:
             }
         return self._sessions[k]
 
-    def _upsert_message(self, session_key: str, msg: Dict[str, Any]) -> None:
+    def _format_status_label(self, msg: Dict[str, Any], session_type: str) -> Tuple[str, str]:
+        readers = [u for u in msg.get("read_by", []) if u != self._username]
+        if readers:
+            return ("✓✓ 已读" if session_type == "pm" else f"✓✓ {len(readers)}人已读"), C_PRIMARY
+        if msg.get("status") == "sending":
+            return "发送中...", C_MUTED
+        return "✓ 已送达", C_MUTED
+
+    def _update_msg_status_inplace(self, session_key: str, msg: Dict[str, Any]) -> None:
+        if self._active_key != session_key:
+            return
+        msg_id = msg.get("msg_id")
+        if not msg_id:
+            return
+        lbl = self._status_labels.get(msg_id)
+        if lbl is not None and lbl.winfo_exists():
+            session = self._sessions.get(session_key)
+            stype = session["type"] if session else "room"
+            st_txt, st_fg = self._format_status_label(msg, stype)
+            lbl.configure(text=st_txt, fg=st_fg)
+        else:
+            self._dirty_messages = True
+
+    def _upsert_message(self, session_key: str, msg: Dict[str, Any], defer_render: bool = False) -> None:
         session = self._sessions.get(session_key)
         if session is None:
             return
@@ -667,15 +698,18 @@ class ChatRoomGUI:
         msg_id = msg.get("msg_id")
         if msg_id and msg_id in session["msg_map"]:
             existing = session["msg_map"][msg_id]
+            changed = False
             if msg.get("status") == "delivered" and existing.get("status") == "sending":
                 existing["status"] = "delivered"
-            if msg.get("ts"):
+                changed = True
+            if msg.get("ts") and msg["ts"] != existing.get("ts"):
                 existing["ts"] = msg["ts"]
             for u in msg.get("read_by", []):
                 if u not in existing["read_by"]:
                     existing["read_by"].append(u)
-            if self._active_key == session_key:
-                self._render_messages()
+                    changed = True
+            if changed and self._active_key == session_key:
+                self._update_msg_status_inplace(session_key, existing)
             return
 
         msg.setdefault("read_by", [])
@@ -703,10 +737,16 @@ class ChatRoomGUI:
         ):
             session["unread"] += 1
 
-        self._render_sidebar()
-        if self._active_key == session_key:
-            self._render_messages()
-            self._send_read_receipts_for_active()
+        if defer_render:
+            self._dirty_sidebar = True
+            if self._active_key == session_key:
+                self._dirty_messages = True
+                self._dirty_read = True
+        else:
+            self._render_sidebar()
+            if self._active_key == session_key:
+                self._render_messages()
+                self._send_read_receipts_for_active()
 
     # ===================== 界面渲染 =====================
 
@@ -861,13 +901,17 @@ class ChatRoomGUI:
         self.msg_text.focus_set()
 
     def _render_messages(self) -> None:
+        self._status_labels.clear()
+        self._file_progress_labels.clear()
         for w in self.chat_inner.winfo_children():
             w.destroy()
 
         active = self._sessions.get(self._active_key) or self._ensure_room_session(DEFAULT_ROOM_ID)
         last_min = ""
+        # 仅渲染最近 60 条消息，避免 Windows Tkinter 创建过多原生句柄导致卡顿
+        visible_msgs = active["messages"][-60:]
 
-        for m in active["messages"]:
+        for m in visible_msgs:
             minute = str(m.get("ts", ""))[:5]
             if minute and minute != last_min:
                 tk.Label(
@@ -898,15 +942,18 @@ class ChatRoomGUI:
 
             is_self = m.get("sender") == self._username
             row = tk.Frame(self.chat_inner, bg=C_CHAT_BG)
-            row.pack(fill=tk.X, pady=6)
+            row.pack(fill=tk.X, pady=5)
 
             side = tk.RIGHT if is_self else tk.LEFT
-            av = make_avatar(
+            sender_name = m.get("sender", "?")
+            av = tk.Label(
                 row,
-                m.get("sender", "?"),
-                size=34,
-                bg=C_CHAT_BG,
-                font_family=self.font,
+                text=avatar_text(sender_name, is_room=False),
+                bg=avatar_color(sender_name),
+                fg="#FFFFFF",
+                font=(self.font, 9, "bold"),
+                width=3,
+                pady=5,
             )
             av.pack(side=side, anchor="n")
 
@@ -916,7 +963,7 @@ class ChatRoomGUI:
             if active["type"] == "room" and not is_self:
                 tk.Label(
                     col,
-                    text=m.get("sender", ""),
+                    text=sender_name,
                     bg=C_CHAT_BG,
                     fg=C_MUTED,
                     font=(self.font, 8),
@@ -935,7 +982,7 @@ class ChatRoomGUI:
                     fg=C_TEXT,
                     font=(self.font, 10),
                     justify=tk.LEFT,
-                    wraplength=440,
+                    wraplength=int(440 * self._dpi_scale),
                     padx=12,
                     pady=8,
                     highlightthickness=1,
@@ -944,27 +991,28 @@ class ChatRoomGUI:
                 bubble.pack(anchor="e" if is_self else "w")
 
                 if is_self:
-                    readers = [u for u in m.get("read_by", []) if u != self._username]
-                    if readers:
-                        st_txt = "✓✓ 已读" if active["type"] == "pm" else f"✓✓ {len(readers)}人已读"
-                        st_fg = C_PRIMARY
-                    elif m.get("status") == "sending":
-                        st_txt = "发送中..."
-                        st_fg = C_MUTED
-                    else:
-                        st_txt = "✓ 已送达"
-                        st_fg = C_MUTED
-                    tk.Label(
+                    st_txt, st_fg = self._format_status_label(m, active["type"])
+                    st_lbl = tk.Label(
                         col,
                         text=st_txt,
                         bg=C_CHAT_BG,
                         fg=st_fg,
                         font=(self.font, 8),
-                    ).pack(anchor="e", pady=(2, 0))
+                    )
+                    st_lbl.pack(anchor="e", pady=(2, 0))
+                    if m.get("msg_id"):
+                        self._status_labels[m["msg_id"]] = st_lbl
 
-        self.chat_inner.update_idletasks()
-        self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
-        self.chat_canvas.yview_moveto(1.0)
+        self.root.after_idle(self._scroll_chat_to_bottom)
+
+    def _scroll_chat_to_bottom(self) -> None:
+        if self._closed:
+            return
+        try:
+            self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
+            self.chat_canvas.yview_moveto(1.0)
+        except tk.TclError:
+            pass
 
     def _render_file_bubble(self, parent: tk.Frame, m: Dict[str, Any], is_self: bool) -> None:
         card_bg = "#F0F7FF" if is_self else "#FFFFFF"
@@ -1003,13 +1051,16 @@ class ChatRoomGUI:
         if m.get("status") != "done":
             pct = int(m.get("percent", 0))
             rec = int(m.get("received_chunks", 0))
-            tk.Label(
+            prog_lbl = tk.Label(
                 card,
                 text=f"TCP 分块传输中：{rec}/{chunks} ({pct}%)",
                 bg=card_bg,
                 fg=C_PRIMARY,
                 font=(self.font, 9),
-            ).pack(anchor="w")
+            )
+            prog_lbl.pack(anchor="w")
+            if m.get("file_id"):
+                self._file_progress_labels[m["file_id"]] = prog_lbl
         else:
             verified = bool(m.get("verified"))
             bar = tk.Frame(card, bg=card_bg)
@@ -1620,11 +1671,13 @@ class ChatRoomGUI:
                 self._sent_read_ids.add(mid)
                 to_mark.append(mid)
         if to_mark:
-            self._safe_send(MSG_READ, msg_ids=to_mark)
+            threading.Thread(
+                target=self._safe_send, args=(MSG_READ,), kwargs={"msg_ids": to_mark}, daemon=True
+            ).start()
 
     # ===================== 报文分发与 UI 队列 =====================
 
-    def _sync_rooms(self, rooms: List[Dict[str, Any]]) -> None:
+    def _sync_rooms(self, rooms: List[Dict[str, Any]], defer_render: bool = False) -> None:
         self._rooms = rooms or [
             {"room_id": DEFAULT_ROOM_ID, "name": DEFAULT_ROOM_NAME, "member_count": len(self._users), "joined": True}
         ]
@@ -1632,16 +1685,24 @@ class ChatRoomGUI:
         for r in self._rooms:
             if r.get("joined"):
                 self._ensure_room_session(r["room_id"], r["name"])
-        self._render_sidebar()
-        self._render_header()
+        if defer_render:
+            self._dirty_sidebar = True
+            self._dirty_header = True
+        else:
+            self._render_sidebar()
+            self._render_header()
 
-    def _sync_users(self, users: List[str]) -> None:
+    def _sync_users(self, users: List[str], defer_render: bool = False) -> None:
         self._users = list(users)
         for u in self._users:
             if u != self._username:
                 self._ensure_peer_session(u)
-        self._render_sidebar()
-        self._render_header()
+        if defer_render:
+            self._dirty_sidebar = True
+            self._dirty_header = True
+        else:
+            self._render_sidebar()
+            self._render_header()
 
     def _resolve_file_key(self, pkt: Dict[str, Any]) -> str:
         to = pkt.get("to")
@@ -1671,6 +1732,7 @@ class ChatRoomGUI:
                     "status": "delivered",
                     "read_by": [],
                 },
+                defer_render=True,
             )
         elif mtype == MSG_PRIVATE:
             peer = pkt.get("to") if pkt.get("sender") == self._username else pkt.get("sender", "")
@@ -1687,14 +1749,14 @@ class ChatRoomGUI:
                     "status": "delivered",
                     "read_by": [],
                 },
+                defer_render=True,
             )
         elif mtype == MSG_ACK:
             entry = self._msg_lookup.get(str(pkt.get("msg_id", "")))
             if entry:
                 sk, msg = entry
                 msg["status"] = pkt.get("status", "delivered")
-                if self._active_key == sk:
-                    self._render_messages()
+                self._update_msg_status_inplace(sk, msg)
         elif mtype == MSG_READ:
             entry = self._msg_lookup.get(str(pkt.get("msg_id", "")))
             reader = pkt.get("reader")
@@ -1702,8 +1764,7 @@ class ChatRoomGUI:
                 sk, msg = entry
                 if reader not in msg["read_by"]:
                     msg["read_by"].append(reader)
-                    if self._active_key == sk:
-                        self._render_messages()
+                    self._update_msg_status_inplace(sk, msg)
         elif mtype == MSG_HISTORY_RESP:
             peer = pkt.get("peer")
             sk = self._ensure_peer_session(peer)["key"] if peer else self._ensure_room_session(pkt.get("room_id") or DEFAULT_ROOM_ID)["key"]
@@ -1720,15 +1781,16 @@ class ChatRoomGUI:
                         "status": m.get("status", "delivered"),
                         "read_by": list(m.get("read_by", [])),
                     },
+                    defer_render=True,
                 )
         elif mtype == MSG_ROOM_LIST:
-            self._sync_rooms(list(pkt.get("rooms", [])))
+            self._sync_rooms(list(pkt.get("rooms", [])), defer_render=True)
         elif mtype == MSG_USER_LIST:
-            self._sync_users(list(pkt.get("users", [])))
+            self._sync_users(list(pkt.get("users", [])), defer_render=True)
         elif mtype == MSG_SYSTEM:
             rid = pkt.get("room_id") or DEFAULT_ROOM_ID
             self._ensure_room_session(rid)
-            self._upsert_message(room_key(rid), {"kind": "system", "text": pkt.get("text", ""), "ts": ts})
+            self._upsert_message(room_key(rid), {"kind": "system", "text": pkt.get("text", ""), "ts": ts}, defer_render=True)
         elif mtype == MSG_ERROR:
             messagebox.showwarning("提示", str(pkt.get("text", "服务端返回错误")))
         elif mtype == MSG_FILE_META:
@@ -1756,7 +1818,7 @@ class ChatRoomGUI:
                 "msg": msg,
                 "chunks": {},
             }
-            self._upsert_message(sk, msg)
+            self._upsert_message(sk, msg, defer_render=True)
         elif mtype == MSG_FILE_CHUNK:
             fid = str(pkt.get("file_id", ""))
             entry = self._incoming_files.get(fid)
@@ -1767,10 +1829,13 @@ class ChatRoomGUI:
                 entry["chunks"][seq] = base64.b64decode(pkt.get("data", ""))
                 rec = len(entry["chunks"])
                 tot = entry["msg"]["total_chunks"]
+                pct = min(100, int(rec * 100 / tot))
                 entry["msg"]["received_chunks"] = rec
-                entry["msg"]["percent"] = min(100, int(rec * 100 / tot))
-                if self._active_key == entry["session_key"]:
-                    self._render_messages()
+                entry["msg"]["percent"] = pct
+                # 仅原地更新进度文字，绝不重建聊天列表
+                lbl = self._file_progress_labels.get(fid)
+                if lbl is not None and lbl.winfo_exists():
+                    lbl.configure(text=f"TCP 分块传输中：{rec}/{tot} ({pct}%)")
         elif mtype == MSG_FILE_END:
             fid = str(pkt.get("file_id", ""))
             entry = self._incoming_files.pop(fid, None)
@@ -1800,14 +1865,16 @@ class ChatRoomGUI:
             entry["msg"]["percent"] = 100
             entry["msg"]["verified"] = verified
             if self._active_key == entry["session_key"]:
-                self._render_messages()
+                self._dirty_messages = True
 
     def _poll_ui_queue(self) -> None:
-        while True:
+        processed = 0
+        while processed < 80:
             try:
                 ev, payload = self._ui_queue.get_nowait()
             except queue.Empty:
                 break
+            processed += 1
 
             if ev == "packet":
                 self._handle_packet(payload)
@@ -1822,8 +1889,22 @@ class ChatRoomGUI:
             elif ev == "reconnected":
                 self._on_connected_ui(payload)
 
+        # 本轮事件合并后最多只执行 1 次重绘与 1 次批量已读上报
+        if self._dirty_header:
+            self._dirty_header = False
+            self._render_header()
+        if self._dirty_sidebar:
+            self._dirty_sidebar = False
+            self._render_sidebar()
+        if self._dirty_messages:
+            self._dirty_messages = False
+            self._render_messages()
+        if self._dirty_read:
+            self._dirty_read = False
+            self._send_read_receipts_for_active()
+
         if not self._closed:
-            self.root.after(40, self._poll_ui_queue)
+            self.root.after(30, self._poll_ui_queue)
 
     def _on_close(self) -> None:
         self._closed = True

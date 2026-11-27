@@ -1120,7 +1120,16 @@
       renderHeader();
     }
 
-    function upsertMessage(sessionKey, msg) {
+    let _renderMsgRaf = null;
+    function scheduleRenderMessages() {
+      if (_renderMsgRaf !== null) return;
+      _renderMsgRaf = requestAnimationFrame(() => {
+        _renderMsgRaf = null;
+        renderMessages();
+      });
+    }
+
+    function upsertMessage(sessionKey, msg, deferRender = false) {
       const session = state.sessions[sessionKey];
       if (!session) return;
 
@@ -1135,7 +1144,7 @@
             if (!existing.readBy.includes(u)) existing.readBy.push(u);
           });
         }
-        if (state.activeKey === sessionKey) renderMessages();
+        if (!deferRender && state.activeKey === sessionKey) scheduleRenderMessages();
         return;
       }
 
@@ -1162,10 +1171,12 @@
         session.unread += 1;
       }
 
-      renderSidebar();
-      if (state.activeKey === sessionKey) {
-        renderMessages();
-        sendReadReceiptsForActive();
+      if (!deferRender) {
+        renderSidebar();
+        if (state.activeKey === sessionKey) {
+          scheduleRenderMessages();
+          sendReadReceiptsForActive();
+        }
       }
     }
 
@@ -1869,13 +1880,13 @@
         const entry = state.msgLookup[pkt.msg_id];
         if (entry) {
           entry.msg.status = pkt.status || "delivered";
-          if (state.activeKey === entry.sessionKey) renderMessages();
+          if (state.activeKey === entry.sessionKey) scheduleRenderMessages();
         }
       } else if (pkt.type === "MSG_READ") {
         const entry = state.msgLookup[pkt.msg_id];
         if (entry && pkt.reader && !entry.msg.readBy.includes(pkt.reader)) {
           entry.msg.readBy.push(pkt.reader);
-          if (state.activeKey === entry.sessionKey) renderMessages();
+          if (state.activeKey === entry.sessionKey) scheduleRenderMessages();
         }
       } else if (pkt.type === "HISTORY_RESP") {
         const key = pkt.peer
@@ -1892,10 +1903,11 @@
             ts: m.ts,
             status: m.status || "delivered",
             readBy: m.read_by || [],
-          });
+          }, true);
         });
+        renderSidebar();
         if (state.activeKey === key) {
-          renderMessages();
+          scheduleRenderMessages();
           sendReadReceiptsForActive();
         }
       } else if (pkt.type === "ROOM_LIST") {

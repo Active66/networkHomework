@@ -25,6 +25,9 @@ class ChatStorage:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        if db_path != ":memory:":
+            self._conn.execute("PRAGMA journal_mode=WAL;")
+            self._conn.execute("PRAGMA synchronous=NORMAL;")
         self._init_schema()
 
     def _init_schema(self) -> None:
